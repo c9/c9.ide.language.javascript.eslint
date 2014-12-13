@@ -131,6 +131,7 @@ handler.getMaxFileSizeSupported = function() {
 };
 
 handler.analyzeSync = function(value, ast) {
+    var doc = this.doc;
     var markers = [];
     if (!workerUtil.isFeatureEnabled("hints"))
         return markers;
@@ -147,14 +148,21 @@ handler.analyzeSync = function(value, ast) {
     
     messages.forEach(function(m) {
         var level = m.severity === 2 ? "error" : "warning";
+        var ec;
         
-        if (m.message.match(/(missing semicolon|.*is defined but never used)/i))
+        if (m.message.match(/(missing semicolon|is defined but never used)/i))
             level = "info";
+        if (m.message.match(/is defined but never used|is not defined/)) {
+            var line = doc.getLine(m.line - 1);
+            var id = workerUtil.getFollowingIdentifier(line, m.column)
+            ec = m.column + id.length
+        }
             
         markers.push({
             pos: {
                 sl: m.line - 1,
-                sc: m.column - 1,
+                sc: m.column,
+                ec: ec
             },
             level: level,
             message: m.message
