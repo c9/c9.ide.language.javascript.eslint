@@ -11,8 +11,114 @@ var workerUtil = require('plugins/c9.ide.language/worker_util');
 var linter = require("./eslint_browserified");
 var handler = module.exports = Object.create(baseLanguageHandler);
 
+var defaultRules;
+var defaultEnvs = {
+    "browser": true,
+    "amd": true,
+    "builtin": true,
+    "node": true,
+    "jasmine": false,
+    "mocha": false
+};
+
+handler.init = function(callback) {
+    var rules = defaultRules = linter.defaults().rules;
+    
+    // Semantic rule defaults
+    rules["no-process-exit"] = 0;
+    rules["no-path-concat"] = 0;
+    rules["handle-callback-err"] = 1;
+    rules["no-debugger"] = 1;
+    rules["valid-jsdoc"] = 0;
+    rules["no-undefined"] = 1;
+    rules["no-undef"] = 1;
+
+    // Forgive dangling comma disliked by old IE
+    // (may be controversial)
+    rules["no-comma-dangle"] = 0;
+    
+    // Disable all of opinionated style rules
+    // (copied from http://eslint.org/docs/rules/)
+    rules["brace-style"] = 0;
+    rules["camelcase"] = 0;
+    rules["comma-spacing"] = 0;
+    rules["comma-style"] = 0;
+    rules["consistent-this"] = 0;
+    rules["eol-last"] = 0;
+    rules["func-names"] = 0;
+    rules["func-style"] = 0;
+    rules["key-spacing"] = 0;
+    rules["max-nested-callbacks"] = 0;
+    rules["new-cap"] = 0;
+    rules["new-parens"] = 0;
+    rules["no-array-constructor"] = 0;
+    rules["no-inline-comments"] = 0;
+    rules["no-lonely-if"] = 0;
+    rules["no-mixed-spaces-and-tabs"] = 0;
+    rules["no-multiple-empty-lines"] = 0;
+    rules["no-nested-ternary"] = 0;
+    rules["no-new-object"] = 0;
+    rules["no-space-before-semi"] = 0;
+    rules["no-spaced-func"] = 0;
+    rules["no-ternary"] = 0;
+    rules["no-trailing-spaces"] = 0;
+    rules["no-underscore-dangle"] = 0;
+    rules["no-wrap-func"] = 0;
+    rules["one-var"] = 0;
+    rules["operator-assignment"] = 0;
+    rules["padded-blocks"] = 0;
+    rules["quote-props"] = 0;
+    rules["quotes"] = 0;
+    rules["semi"] = 0;
+    rules["sort-vars"] = 0;
+    rules["space-after-keywords"] = 0;
+    rules["space-before-blocks"] = 0;
+    rules["space-in-brackets"] = 0;
+    rules["space-in-parens"] = 0;
+    rules["space-infix-ops"] = 0;
+    rules["space-return-throw-case"] = 0;
+    rules["space-unary-ops"] = 0;
+    rules["spaced-line-comment"] = 0;
+    rules["wrap-regex"] = 0;
+
+    // So-called "best practices", like curlies in if :o
+    rules["curly"] = 0;
+    rules["eqeqeq"] = 0;
+    rules["dot-notation"] = 0;
+    rules["no-alert"] = 0;
+    rules["no-caller"] = 0;
+    rules["no-empty-label"] = 0;
+    rules["no-eval"] = 1;
+    rules["no-extra-bind"] = 0;
+    rules["no-iterator"] = 0;
+    rules["no-labels"] = 0;
+    rules["no-lone-blocks"] = 0;
+    rules["no-multi-spaces"] = 0;
+    rules["no-multi-str"] = 0;
+    rules["no-native-reassign"] = 1;
+    rules["no-new"] = 0;
+    rules["no-new-func"] = 1;
+    rules["no-new-wrappers"] = 1;
+    rules["no-return-assign"] = 0;
+    rules["no-script-url"] = 0;
+    rules["no-self-compare"] = 0;
+    rules["no-sequences"] = 0;
+    rules["no-unused-expressions"] = 0;
+    rules["radix"] = 1;
+    
+    // Strict mode nagging
+    rules["global-strict"] = 0;
+    rules["no-extra-strict"] = 0;
+    rules["strict"] = 0;
+    
+    // Enable one opinionated style rule
+    rules["semi"] = 1;
+    
+    callback();
+};
+
 handler.handlesLanguage = function(language) {
-    return language === 'javascript';
+    return language === 'javascript' || language == 'jsx';
 };
 
 handler.analyze = function(value, ast, callback) {
@@ -31,22 +137,26 @@ handler.analyzeSync = function(value, ast) {
 
     // TODO: use .eslintrc from user's project :)
     var messages = linter.verify(value, {
-        envs: ["browser", "amd", "builtin", "node"/*, "jasmine", "mocha"*/],
-        rules: {
-            "no-process-exit": 0,
-            "no-path-concat": 0,
-            "handle-callback-err": 1, // default for node
-            "no-debugger": 1,
-        }
+        settings: {
+            ecmascript: 6,
+            jsx: true
+        },
+        env: defaultEnvs,
+        rules: defaultRules
     });
     
     messages.forEach(function(m) {
+        var level = m.severity === 2 ? "error" : "warning";
+        
+        if (m.message.match(/(missing semicolon|.*is defined but never used)/i))
+            level = "info";
+            
         markers.push({
             pos: {
                 sl: m.line - 1,
                 sc: m.column - 1,
             },
-            type: m.severity === 2 ? "error" : "warning",
+            level: level,
             message: m.message
         });
     });
