@@ -22,98 +22,46 @@ var defaultEnvs = {
 };
 
 handler.init = function(callback) {
-    var rules = defaultRules = linter.defaults().rules;
+    var rules = defaultRules = {};
     
-    // Semantic rule defaults
-    rules["no-process-exit"] = 0;
-    rules["no-console"] = 0;
-    rules["no-path-concat"] = 0;
     rules["handle-callback-err"] = 1;
     rules["no-debugger"] = 1;
-    rules["valid-jsdoc"] = 0;
-    rules["no-undefined"] = 1;
     rules["no-undef"] = 1;
-    rules["no-use-before-define"] = [1, "nofunc"];
-    rules["no-shadow"] = 1;
+    // too buggy:
+    // rules["no-use-before-define"] = [3, "nofunc"];
+    rules["no-shadow"] = 3;
     rules["no-inner-declarations"] = [1, "functions"];
-
-    // Forgive dangling comma disliked by old IE
-    // (may be controversial)
-    rules["no-comma-dangle"] = 0;
-    
-    // Disable all of opinionated style rules
-    // (copied from http://eslint.org/docs/rules/)
-    rules["brace-style"] = 0;
-    rules["camelcase"] = 0;
-    rules["comma-spacing"] = 0;
-    rules["comma-style"] = 0;
-    rules["consistent-this"] = 0;
-    rules["eol-last"] = 0;
-    rules["func-names"] = 0;
-    rules["func-style"] = 0;
-    rules["key-spacing"] = 0;
-    rules["max-nested-callbacks"] = 0;
-    rules["new-cap"] = 0;
-    rules["new-parens"] = 0;
-    rules["no-array-constructor"] = 0;
-    rules["no-inline-comments"] = 0;
-    rules["no-lonely-if"] = 0;
-    rules["no-mixed-spaces-and-tabs"] = 0;
-    rules["no-multiple-empty-lines"] = 0;
-    rules["no-nested-ternary"] = 0;
-    rules["no-new-object"] = 0;
-    rules["no-space-before-semi"] = 0;
-    rules["no-spaced-func"] = 0;
-    rules["no-ternary"] = 0;
-    rules["no-trailing-spaces"] = 0;
-    rules["no-underscore-dangle"] = 0;
-    rules["no-wrap-func"] = 0;
-    rules["one-var"] = 0;
-    rules["operator-assignment"] = 0;
-    rules["padded-blocks"] = 0;
-    rules["quote-props"] = 0;
-    rules["quotes"] = 0;
-    rules["semi"] = 0;
-    rules["sort-vars"] = 0;
-    rules["space-after-keywords"] = 0;
-    rules["space-before-blocks"] = 0;
-    rules["space-in-brackets"] = 0;
-    rules["space-in-parens"] = 0;
-    rules["space-infix-ops"] = 0;
-    rules["space-return-throw-case"] = 0;
-    rules["space-unary-ops"] = 0;
-    rules["spaced-line-comment"] = 0;
-    rules["wrap-regex"] = 0;
-
-    // So-called "best practices", like curlies in if :o
-    rules["curly"] = 0;
-    rules["eqeqeq"] = 0;
-    rules["dot-notation"] = 0;
-    rules["no-alert"] = 0;
-    rules["no-caller"] = 0;
-    rules["no-empty-label"] = 0;
-    rules["no-eval"] = 1;
-    rules["no-extra-bind"] = 0;
-    rules["no-iterator"] = 0;
-    rules["no-labels"] = 0;
-    rules["no-lone-blocks"] = 0;
-    rules["no-multi-spaces"] = 0;
-    rules["no-multi-str"] = 0;
     rules["no-native-reassign"] = 1;
-    rules["no-new"] = 0;
     rules["no-new-func"] = 1;
     rules["no-new-wrappers"] = 1;
-    rules["no-return-assign"] = 0;
-    rules["no-script-url"] = 0;
-    rules["no-self-compare"] = 0;
-    rules["no-sequences"] = 0;
-    rules["no-unused-expressions"] = 0;
+    rules["no-cond-assign"] = [1, "except-parens"];
+    rules["no-debugger"] = 3;
+    rules["no-dupe-keys"] = 3;
+    rules["no-eval"] = 2;
+    rules["no-func-assign"] = 1;
+    rules["no-extra-semi"] = 3;
+    rules["no-invalid-regexp"] = 1;
+    rules["no-irregular-whitespace"] = 3;
+    rules["no-negated-in-lhs"] = 1;
+    rules["no-regex-spaces"] = 3;
+    rules["no-reserved-keys"] = 3;
+    rules["no-unreachable"] = 1;
+    rules["use-isnan"] = 2;
+    rules["valid-typeof"] = 1;
+    rules["no-redeclare"] = 3;
+    rules["no-with"] = 1;
     rules["radix"] = 1;
-    
-    // Strict mode nagging
-    rules["global-strict"] = 0;
-    rules["no-extra-strict"] = 0;
-    rules["strict"] = 0;
+    rules["no-delete-var"] = 2;
+    rules["no-label-var"] = 3;
+    rules["no-shadow-restricted-names"] = 2;
+    rules["handle-callback-err"] = 1;
+    rules["no-path-concat"] = 3;
+    rules["no-new-require"] = 2;
+
+    for (var r in rules) {
+        if (!(r in linter.defaults().rules))
+            throw new Error("Unknown rule: ", r);
+    }
     
     callback();
 };
@@ -139,11 +87,13 @@ handler.analyzeSync = function(value, ast) {
 
     defaultRules["no-unused-vars"] = [
         3,
-        "all",
-        handler.isFeatureEnabled("unusedFunctionArgs") ? "all" : "none"
+        {
+            vars: "all",
+            args: handler.isFeatureEnabled("unusedFunctionArgs") ? "all" : "none"
+        }
     ];
     defaultRules["no-undef"] =
-        handler.isFeatureEnabled("undeclaredVars") ? 3 : 0;
+        handler.isFeatureEnabled("undeclaredVars") ? 1 : 0;
     defaultRules["semi"] =
         handler.isFeatureEnabled("semi") ? 3 : 0;
 
@@ -166,8 +116,14 @@ handler.analyzeSync = function(value, ast) {
         else
             level = "info";
 
+        if (m.message.match(/(.*) is defined but never used/)) {
+            if (RegExp.$1.toUpperCase() === RegExp.$1)
+                return; // ignore unused constants
+        }
+
+
         var ec;
-        if (m.message.match(/is defined but never used|is not defined|was used before it was defined/)) {
+        if (m.message.match(/is not defined|was used before it was defined|is already declared|is already defined/)) {
             var line = doc.getLine(m.line - 1);
             var id = workerUtil.getFollowingIdentifier(line, m.column)
             ec = m.column + id.length
