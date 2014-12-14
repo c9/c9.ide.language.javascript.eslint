@@ -26,12 +26,16 @@ handler.init = function(callback) {
     
     // Semantic rule defaults
     rules["no-process-exit"] = 0;
+    rules["no-console"] = 0;
     rules["no-path-concat"] = 0;
     rules["handle-callback-err"] = 1;
     rules["no-debugger"] = 1;
     rules["valid-jsdoc"] = 0;
     rules["no-undefined"] = 1;
     rules["no-undef"] = 1;
+    rules["no-use-before-define"] = [1, "nofunc"];
+    rules["no-shadow"] = 1;
+    rules["no-inner-declarations"] = [1, "functions"];
 
     // Forgive dangling comma disliked by old IE
     // (may be controversial)
@@ -111,9 +115,6 @@ handler.init = function(callback) {
     rules["no-extra-strict"] = 0;
     rules["strict"] = 0;
     
-    // Enable one opinionated style rule
-    rules["semi"] = 1;
-    
     callback();
 };
 
@@ -136,6 +137,16 @@ handler.analyzeSync = function(value, ast) {
     if (!workerUtil.isFeatureEnabled("hints"))
         return markers;
 
+    defaultRules["no-unused-vars"] = [
+        3,
+        "all",
+        handler.isFeatureEnabled("unusedFunctionArgs") ? "all" : "none"
+    ];
+    defaultRules["no-undef"] =
+        handler.isFeatureEnabled("undeclaredVars") ? 3 : 0;
+    defaultRules["semi"] =
+        handler.isFeatureEnabled("semi") ? 3 : 0;
+
     // TODO: use .eslintrc from user's project :)
     var messages = linter.verify(value, {
         settings: {
@@ -147,12 +158,16 @@ handler.analyzeSync = function(value, ast) {
     });
     
     messages.forEach(function(m) {
-        var level = m.severity === 2 ? "error" : "warning";
-        var ec;
-        
-        if (m.message.match(/(missing semicolon|is defined but never used)/i))
+        var level;
+        if (m.severity === 2)
+            level = "error";
+        else if (m.severity === 1)
+            level = "warning";
+        else
             level = "info";
-        if (m.message.match(/is defined but never used|is not defined/)) {
+
+        var ec;
+        if (m.message.match(/is defined but never used|is not defined|was used before it was defined/)) {
             var line = doc.getLine(m.line - 1);
             var id = workerUtil.getFollowingIdentifier(line, m.column)
             ec = m.column + id.length
