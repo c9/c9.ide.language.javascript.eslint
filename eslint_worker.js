@@ -67,7 +67,7 @@ handler.init = function(callback) {
 };
 
 handler.handlesLanguage = function(language) {
-    return language === 'javascript' || language == 'jsx';
+    return language === "javascript" || language == "jsx";
 };
 
 handler.analyze = function(value, ast, callback) {
