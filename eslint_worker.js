@@ -123,11 +123,13 @@ handler.analyzeSync = function(value, ast) {
 
 
         var ec;
-        if (m.message.match(/is not defined|was used before it was defined|is already declared|is already defined/)) {
+        if (m.message.match(/is not defined|was used before it was defined|is already declared|is already defined|unexpected identifier/i)) {
             var line = doc.getLine(m.line - 1);
             var id = workerUtil.getFollowingIdentifier(line, m.column)
             ec = m.column + id.length
         }
+        if (m.message.match(/unexpected identifier/i))
+            m.column--; // work around column offset bug
             
         markers.push({
             pos: {
