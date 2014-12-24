@@ -13,7 +13,7 @@ var handler = module.exports = Object.create(baseLanguageHandler);
 
 var defaultRules;
 var defaultEnvs = {
-    "browser": true,
+    "browser": false,
     "amd": true,
     "builtin": true,
     "node": true,
