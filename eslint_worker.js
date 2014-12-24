@@ -29,7 +29,8 @@ handler.init = function(callback) {
     rules["no-undef"] = 1;
     // too buggy:
     // rules["no-use-before-define"] = [3, "nofunc"];
-    rules["no-shadow"] = 3;
+    // to annoying:
+    // rules["no-shadow"] = 3;
     rules["no-inner-declarations"] = [1, "functions"];
     rules["no-native-reassign"] = 1;
     rules["no-new-func"] = 1;
