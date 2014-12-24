@@ -12,7 +12,7 @@ var linter = require("./eslint_browserified");
 var handler = module.exports = Object.create(baseLanguageHandler);
 
 var defaultRules;
-var defaultEnvs = {
+var defaultEnv = {
     "browser": false,
     "amd": true,
     "builtin": true,
@@ -20,6 +20,7 @@ var defaultEnvs = {
     "jasmine": false,
     "mocha": false
 };
+var defaultGlobals = require("plugins/c9.ide.language.javascript/scope_analyzer").GLOBALS;
 
 handler.init = function(callback) {
     var rules = defaultRules = {};
@@ -104,7 +105,8 @@ handler.analyzeSync = function(value, ast) {
             ecmascript: 6,
             jsx: true
         },
-        env: defaultEnvs,
+        env: defaultEnv,
+        globals: defaultGlobals,
         rules: defaultRules
     });
     
