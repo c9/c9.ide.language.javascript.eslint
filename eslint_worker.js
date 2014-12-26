@@ -97,7 +97,9 @@ handler.analyzeSync = function(value, ast) {
     defaultRules["semi"] =
         handler.isFeatureEnabled("semi") ? 3 : 0;
 
-    // TODO: use .eslintrc from user's project :)
+    if (this.path.match(/\.(run|settings)/))
+        value="s=" + value;
+
     var messages = linter.verify(value, {
         settings: {
             ecmascript: 6,
