@@ -41,7 +41,6 @@ handler.init = function(callback) {
     rules["no-dupe-keys"] = 3;
     rules["no-eval"] = 2;
     rules["no-func-assign"] = 1;
-    rules["no-extra-semi"] = 3;
     rules["no-invalid-regexp"] = 1;
     rules["no-irregular-whitespace"] = 3;
     rules["no-negated-in-lhs"] = 1;
@@ -129,6 +128,11 @@ handler.analyzeSync = function(value, ast) {
             var line = doc.getLine(m.line - 1);
             var id = workerUtil.getFollowingIdentifier(line, m.column)
             ec = m.column + id.length
+        }
+        if (m.message.match(/missing semicolon/i)) {
+            var line = doc.getLine(m.line - 1);
+            if (line.substr(m.column).match(/\s*}/))
+                return; // allow missing semi at end of block
         }
         if (m.message.match(/unexpected identifier/i))
             m.column--; // work around column offset bug
