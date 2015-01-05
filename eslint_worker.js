@@ -51,7 +51,7 @@ handler.init = function(callback) {
     rules["valid-typeof"] = 1;
     rules["no-redeclare"] = 3;
     rules["no-with"] = 1;
-    rules["radix"] = 1;
+    rules["radix"] = 3;
     rules["no-delete-var"] = 2;
     rules["no-label-var"] = 3;
     rules["no-shadow-restricted-names"] = 2;
@@ -97,8 +97,9 @@ handler.analyzeSync = function(value, ast) {
     defaultRules["semi"] =
         handler.isFeatureEnabled("semi") ? 3 : 0;
 
-    if (this.path.match(/\.(run|settings)/))
-        value="s=" + value;
+    isJson = this.path.match(/\.(json|run|settings|build)$/);
+    if (isJson)
+        value = "!" + value;
 
     var messages = linter.verify(value, {
         settings: {
@@ -118,12 +119,14 @@ handler.analyzeSync = function(value, ast) {
             level = "warning";
         else
             level = "info";
+        
+        if (isJson && level !== "error")
+            return;
 
         if (m.message.match(/(.*) is defined but never used/)) {
             if (RegExp.$1.toUpperCase() === RegExp.$1)
                 return; // ignore unused constants
         }
-
 
         var ec;
         if (m.message.match(/is not defined|was used before it was defined|is already declared|is already defined|unexpected identifier/i)) {
