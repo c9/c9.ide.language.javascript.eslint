@@ -97,7 +97,7 @@ handler.analyzeSync = function(value, ast) {
     defaultRules["semi"] =
         handler.isFeatureEnabled("semi") ? 3 : 0;
 
-    isJson = this.path.match(/\.(json|run|settings|build)$/);
+    var isJson = this.path.match(/\.(json|run|settings|build)$/);
     if (isJson)
         value = "!" + value;
 
@@ -134,7 +134,7 @@ handler.analyzeSync = function(value, ast) {
             var id = workerUtil.getFollowingIdentifier(line, m.column);
             if (m.message.match(/is already defined/) && line.match("for \\(var " + id))
                 return;
-            ec = m.column + id.length
+            ec = m.column + id.length;
         }
         if (m.message.match(/missing semicolon/i)) {
             var line = doc.getLine(m.line - 1);
