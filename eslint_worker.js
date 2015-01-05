@@ -131,7 +131,9 @@ handler.analyzeSync = function(value, ast) {
         var ec;
         if (m.message.match(/is not defined|was used before it was defined|is already declared|is already defined|unexpected identifier/i)) {
             var line = doc.getLine(m.line - 1);
-            var id = workerUtil.getFollowingIdentifier(line, m.column)
+            var id = workerUtil.getFollowingIdentifier(line, m.column);
+            if (m.message.match(/is already defined/) && line.match("for \\(var " + id))
+                return;
             ec = m.column + id.length
         }
         if (m.message.match(/missing semicolon/i)) {
