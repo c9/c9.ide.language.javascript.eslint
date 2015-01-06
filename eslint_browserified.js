@@ -5636,7 +5636,19 @@ module.exports={
     };
 
     Scope.prototype.__define = function __define(node, info) {
-        var name, variable;
+        var name, variable, current;
+        current = this;
+        if (node && node.elements)
+            return node.elements.forEach(function(n) {
+                current.__define(n, info);
+            });
+        if (node && node.type === Syntax.ObjectPattern)
+            return node.properties.forEach(function(n) {
+                current.__define(n, info);
+            });
+        if (node && node.type === Syntax.Property)
+            current.__define(node.value, info);
+        
         if (node && node.type === Syntax.Identifier) {
             name = node.name;
             if (!this.set.has(name)) {
@@ -23358,13 +23370,13 @@ module.exports = function(context) {
                 def = variable.defs[j];
 
                 // Identifier is a function and was declared in this scope
-                if (def.name.name === name && def.type === "FunctionName") {
+                if (def.type === "FunctionName" && def.name.name === name) {
                     return true;
                 }
 
                 // Identifier is a variable and was declared in this scope. This
                 // is a legitimate shadow variable.
-                if (def.name.name === name) {
+                if (def.name && def.name.name === name) {
                     return false;
                 }
             }
