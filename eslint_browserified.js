@@ -5834,7 +5834,7 @@ module.exports={
     };
 
     Scope.isVariableScopeRequired = function isVariableScopeRequired(node) {
-        return node.type === Syntax.Program || node.type === Syntax.FunctionExpression || node.type === Syntax.FunctionDeclaration;
+        return node.type === Syntax.Program || node.type === Syntax.FunctionExpression || node.type === Syntax.FunctionDeclaration || node.type === Syntax.ArrowFunctionExpression;
     };
 
     /**
@@ -5969,6 +5969,7 @@ module.exports={
                     }
                     break;
 
+                case Syntax.ArrowFunctionExpression:
                 case Syntax.FunctionExpression:
                     // id is defined in upper scope
                     for (i = 0, iz = node.params.length; i < iz; ++i) {
@@ -5980,6 +5981,21 @@ module.exports={
                         });
                     }
                     break;
+                
+                case Syntax.ImportSpecifier:
+                    currentScope.__define(node.name, {
+                        type: Variable.Variable,
+                        name: node.name,
+                        node: node
+                    });
+                    break;
+                
+                case Syntax.ImportNamespaceSpecifier:
+                    currentScope.__define(node.id, {
+                        type: Variable.Variable,
+                        name: node.name,
+                        node: node
+                    });
 
                 case Syntax.Identifier:
                     break;
