@@ -5981,6 +5981,14 @@ module.exports={
                     }
                     break;
 
+                case Syntax.ClassDeclaration:
+                    currentScope.__define(node.id, {
+                        type: Variable.FunctionName,
+                        name: node.id,
+                        node: node
+                    });
+                    break;
+
                 case Syntax.ArrowFunctionExpression:
                 case Syntax.FunctionExpression:
                     // id is defined in upper scope
