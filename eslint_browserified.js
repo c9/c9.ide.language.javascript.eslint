@@ -17251,6 +17251,7 @@ module.exports = {
 	XJSMemberExpression: ['object', 'property'],
 	XJSEmptyExpression: [],
 	XJSExpressionContainer: ['expression'],
+	XJSSpreadAttribute: ['expression'],
 	XJSElement: ['openingElement', 'closingElement', 'children'],
 	XJSClosingElement: ['name'],
 	XJSOpeningElement: ['name', 'attributes'],
