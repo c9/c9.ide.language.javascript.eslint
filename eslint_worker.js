@@ -41,6 +41,7 @@ handler.init = function(callback) {
     rules["no-dupe-keys"] = 3;
     rules["no-eval"] = 2;
     rules["no-func-assign"] = 1;
+    rules["no-extra-semi"] = 3;
     rules["no-invalid-regexp"] = 1;
     rules["no-irregular-whitespace"] = 3;
     rules["no-negated-in-lhs"] = 1;
