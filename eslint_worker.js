@@ -41,7 +41,6 @@ handler.init = function(callback) {
     rules["no-dupe-keys"] = 3;
     rules["no-eval"] = 2;
     rules["no-func-assign"] = 1;
-    rules["no-extra-semi"] = 3;
     rules["no-invalid-regexp"] = 1;
     rules["no-irregular-whitespace"] = 3;
     rules["no-negated-in-lhs"] = 1;
@@ -96,6 +95,8 @@ handler.analyzeSync = function(value, ast) {
     defaultRules["no-undef"] =
         handler.isFeatureEnabled("undeclaredVars") ? 1 : 0;
     defaultRules["semi"] =
+        handler.isFeatureEnabled("semi") ? 3 : 0;
+    defaultRules["no-extra-semi"] =
         handler.isFeatureEnabled("semi") ? 3 : 0;
 
     var isJson = this.path.match(/\.(json|run|settings|build)$/);
