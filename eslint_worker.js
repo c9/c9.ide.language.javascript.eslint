@@ -10,6 +10,9 @@ var baseLanguageHandler = require('plugins/c9.ide.language/base_handler');
 var workerUtil = require('plugins/c9.ide.language/worker_util');
 var linter = require("./eslint_browserified");
 var handler = module.exports = Object.create(baseLanguageHandler);
+var util = require("plugins/c9.ide.language/worker_util");
+var yaml = require("./js-yaml");
+var stripJsonComments = require("./strip-json-comments");
 
 var defaultRules;
 var defaultEnv = {
@@ -20,7 +23,13 @@ var defaultEnv = {
     "jasmine": false,
     "mocha": false
 };
+var defaultSettings = {
+    ecmascript: 6,
+    jsx: true
+};
 var defaultGlobals = require("plugins/c9.ide.language.javascript/scope_analyzer").GLOBALS;
+var userConfig;
+var userConfigRaw;
 
 handler.init = function(callback) {
     var rules = defaultRules = {};
@@ -63,8 +72,51 @@ handler.init = function(callback) {
             throw new Error("Unknown rule: ", r);
     }
     
+    
+    loadConfigFile(true, function(err) {
+        if (err) console.error(err);
+        util.$watchDir("/", handler);
+        util.$onWatchDirChange(onWorkspaceDirChange);
+    });
+    
     callback();
 };
+
+function onWorkspaceDirChange(e) {
+    e.data.files.forEach(function(f) {
+        if (f.name === ".eslintrc")
+            loadConfigFile();
+    });
+}
+
+function loadConfigFile(initialLoad, callback) {
+    util.readFile("/.eslintrc", "utf-8", function onResult(err, data) {
+        if (err) return loadConfig(err);
+        
+        if (data === userConfigRaw)
+            return callback && callback();
+
+        var userConfigRaw = data;
+        var result;
+        try {
+            result = yaml.safeLoad(stripJsonComments(data));
+        }
+        catch (e) {
+            // TODO: show error marker in .eslintrc file?
+            return loadConfig(e);
+        }
+        loadConfig(null, result);
+    });
+    
+    function loadConfig(err, result) {
+        if (err && !callback)
+            util.showError(err);
+        userConfig = result;
+        if (!initialLoad)
+            util.refreshAllMarkers();
+        callback && callback();
+    }
+}
 
 handler.handlesLanguage = function(language) {
     return language === "javascript" || language == "jsx";
@@ -85,33 +137,33 @@ handler.analyzeSync = function(value, ast) {
     if (!workerUtil.isFeatureEnabled("hints"))
         return markers;
 
-    defaultRules["no-unused-vars"] = [
+    var config = userConfig || {};
+
+    config.rules = config.rules || defaultRules;
+    config.env = config.env || defaultEnv;
+    config.globals = config.globals || defaultGlobals;
+    config.settings = config.settings || defaultSettings;
+
+    config.rules["no-unused-vars"] = [
         3,
         {
             vars: "all",
             args: handler.isFeatureEnabled("unusedFunctionArgs") ? "all" : "none"
         }
     ];
-    defaultRules["no-undef"] =
+    config.rules["no-undef"] =
         handler.isFeatureEnabled("undeclaredVars") ? 1 : 0;
-    defaultRules["semi"] =
+    config.rules["semi"] =
         handler.isFeatureEnabled("semi") ? 3 : 0;
-    defaultRules["no-extra-semi"] =
-        handler.isFeatureEnabled("semi") ? 3 : 0;
+    if (config.rules === defaultRules)
+        config.rules["no-extra-semi"] =
+            handler.isFeatureEnabled("semi") ? 3 : 0;
 
     var isJson = this.path.match(/\.(json|run|settings|build)$/);
     if (isJson)
         value = "!" + value;
 
-    var messages = linter.verify(value, {
-        settings: {
-            ecmascript: 6,
-            jsx: true
-        },
-        env: defaultEnv,
-        globals: defaultGlobals,
-        rules: defaultRules
-    });
+    var messages = linter.verify(value, config);
     
     messages.forEach(function(m) {
         var level;
