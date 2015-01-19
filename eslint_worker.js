@@ -56,7 +56,7 @@ handler.init = function(callback) {
     rules["no-label-var"] = 3;
     rules["no-shadow-restricted-names"] = 2;
     rules["handle-callback-err"] = 1;
-    rules["no-new-require"] = 2;
+    rules["no-new-require"] = 1;
 
     for (var r in rules) {
         if (!(r in linter.defaults().rules))
