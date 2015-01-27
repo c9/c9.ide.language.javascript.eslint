@@ -71,7 +71,6 @@ handler.init = function(callback) {
             throw new Error("Unknown rule: ", r);
     }
     
-    
     loadConfigFile(true, function(err) {
         if (err) console.error(err);
         util.$watchDir("/", handler);
@@ -138,7 +137,7 @@ handler.analyzeSync = function(value, ast) {
     if (!workerUtil.isFeatureEnabled("hints"))
         return markers;
 
-    var config = userConfig || {};
+    var config = this.isFeatureEnabled("eslintrc") && userConfig || {};
 
     config.rules = config.rules || defaultRules;
     config.env = config.env || defaultEnv;
