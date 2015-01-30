@@ -191,7 +191,7 @@ handler.analyzeSync = function(value, ast) {
         }
 
         var ec;
-        if (m.message.match(/is not defined|was used before it was defined|is already declared|is already defined|unexpected identifier/i)) {
+        if (m.message.match(/is not defined|was used before it was defined|is already declared|is already defined|unexpected identifier|defined but never used/i)) {
             var line = doc.getLine(m.line - 1);
             var id = workerUtil.getFollowingIdentifier(line, m.column);
             if (m.message.match(/is already defined/) && line.match("for \\(var " + id))
@@ -212,7 +212,8 @@ handler.analyzeSync = function(value, ast) {
                 sc: m.column,
                 ec: ec
             },
-            level: level,
+            type: level,
+            level: level !== "info" && level,
             message: m.message
         });
     });
