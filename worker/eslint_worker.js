@@ -163,7 +163,15 @@ handler.analyzeSync = function(value, ast) {
     if (isJson)
         value = "!" + value;
 
-    var messages = linter.verify(value, config);
+    try {
+        var messages = linter.verify(value, config);
+    }
+    catch (e) {
+        console.error(e.stack);
+        if (e.message && e.message.match(/rule .* was not found/))
+            workerUtil.showError("eslint: " + e.message);
+        return callback()
+    }
     
     messages.forEach(function(m) {
         var level;
