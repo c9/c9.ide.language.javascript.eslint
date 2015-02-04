@@ -47,7 +47,7 @@ handler.init = function(callback) {
     rules["no-cond-assign"] = [1, "except-parens"];
     rules["no-debugger"] = 3;
     rules["no-dupe-keys"] = 3;
-    rules["no-eval"] = 2;
+    rules["no-eval"] = 1;
     rules["no-func-assign"] = 1;
     rules["no-invalid-regexp"] = 1;
     rules["no-irregular-whitespace"] = 3;
@@ -94,7 +94,7 @@ function loadConfigFile(initialLoad, callback) {
         if (data === userConfigRaw)
             return callback && callback();
 
-        var userConfigRaw = data;
+        userConfigRaw = data;
         var result;
         try {
             result = yaml.safeLoad(stripJsonComments(data));
