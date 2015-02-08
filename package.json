@@ -9,14 +9,12 @@
         "url": "http://github.com/c9/c9.ide.language.javascript.eslint.git"
     },
     "plugins": {
-        "plugin": {
-            "eslint": {}
-        }
+        "eslint": {}
     },
     "categories": [
         "core"
     ],
     "licenses": [
-        ""
+        "AGPL"
     ]
 }
