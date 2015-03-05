@@ -121,7 +121,9 @@ handler.handlesLanguage = function(language) {
     return language === "javascript" || language == "jsx";
 };
 
-handler.analyze = function(value, ast, callback) {
+handler.analyze = function(value, ast, callback, minimalAnalysis) {
+    if (minimalAnalysis)
+        return callback();
     callback(handler.analyzeSync(value, ast));
 };
 
