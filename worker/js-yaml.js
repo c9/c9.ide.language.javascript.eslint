@@ -3098,12 +3098,12 @@ var esprima;
 //    If not found - try to fallback to window.esprima. If not
 //    found too - then fail to parse.
 //
-try {
-  esprima = require('esprima');
-} catch (_) {
-  /*global window */
-  if (typeof window !== 'undefined') { esprima = window.esprima; }
-}
+// try {
+//   esprima = require('esprima');
+// } catch (_) {
+//   /*global window */
+//   if (typeof window !== 'undefined') { esprima = window.esprima; }
+// }
 
 var Type = require('../../type');
 
