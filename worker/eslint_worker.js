@@ -20,11 +20,34 @@ var defaultEnv = {
     "builtin": true,
     "node": true,
     "jasmine": false,
-    "mocha": false
+    "mocha": false,
+    "es6": true,
+    "jquery": false,
+    "meteor": false,
 };
-var defaultSettings = {
-    ecmascript: 6,
-    jsx: true
+var defaultEcmaFeatures = {
+    arrowFunctions: true, // enable arrow functions
+    binaryLiterals: true, // enable binary literals
+    blockBindings: true, // enable let and const (aka block bindings)
+    classes: true, // enable classes
+    defaultParams: true, // enable default function parameters
+    destructuring: true, // enable destructuring
+    forOf: true, // enable for-of loops
+    generators: true, // enable generators
+    modules: true, // enable modules and global strict mode
+    objectLiteralComputedProperties: true, // enable computed object literal property names
+    objectLiteralDuplicateProperties: true, // enable duplicate object literal properties in strict mode
+    objectLiteralShorthandMethods: true, // enable object literal shorthand methods
+    objectLiteralShorthandProperties: true, // enable object literal shorthand properties
+    octalLiterals: true, // enable octal literals
+    regexUFlag: true, // enable the regular expression u flag
+    regexYFlag: true, // enable the regular expression y flag
+    spread: true, // enable the spread operator
+    superInFunctions: true, // enable super references inside of functions
+    templateStrings: true, // enable template strings
+    unicodeCodePointEscapes: true, // enable code point escapes
+    globalReturn: true, // allow return statements in the global scope
+    jsx: true, // enable JSX
 };
 var defaultGlobals = require("plugins/c9.ide.language.javascript/scope_analyzer").GLOBALS;
 var userConfig;
@@ -142,7 +165,7 @@ handler.analyzeSync = function(value, ast) {
     config.rules = config.rules || defaultRules;
     config.env = config.env || defaultEnv;
     config.globals = config.globals || defaultGlobals;
-    config.settings = config.settings || defaultSettings;
+    config.ecmaFeatures = config.ecmaFeatures || defaultEcmaFeatures;
 
     config.rules["no-unused-vars"] = [
         3,
