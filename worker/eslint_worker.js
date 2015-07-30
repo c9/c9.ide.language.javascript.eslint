@@ -193,7 +193,7 @@ handler.analyzeSync = function(value, ast) {
         console.error(e.stack);
         if (e.message && e.message.match(/rule .* was not found/))
             workerUtil.showError("eslint: " + e.message);
-        return callback()
+        return [];
     }
     
     messages.forEach(function(m) {
