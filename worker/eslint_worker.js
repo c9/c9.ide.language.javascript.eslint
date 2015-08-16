@@ -225,6 +225,10 @@ handler.analyzeSync = function(value, ast) {
             var line = doc.getLine(m.line - 1);
             if (line.substr(m.column).match(/\s*}/))
                 return; // allow missing semi at end of block
+            // HACK: allow missing semi at end of aura definitions
+            if ((m.line === doc.getLength() || m.line === doc.getLength() - 1)
+                && line.match(/^\s*\}\)\s*$/))
+                return;
         }
         if (m.message.match(/unexpected identifier/i))
             m.column--; // work around column offset bug
