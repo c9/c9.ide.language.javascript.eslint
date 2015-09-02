@@ -221,6 +221,10 @@ handler.analyzeSync = function(value, ast) {
                 return;
             ec = m.column + id.length;
         }
+        if (m.message.match(/"?(.*?)"? is not defined/)) {
+            // TODO: quickfix :)
+            m.message = RegExp.$1 + " is not defined; please fix or add /*global " + RegExp.$1 + "*/";
+        }
         if (m.message.match(/missing semicolon/i)) {
             var line = doc.getLine(m.line - 1);
             if (line.substr(m.column).match(/\s*}/))
