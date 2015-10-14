@@ -209,7 +209,7 @@ handler.analyzeSync = function(value, ast) {
             return;
 
         if (m.message.match(/(.*) is defined but never used/)) {
-            if (RegExp.$1.toUpperCase() === RegExp.$1)
+            if (RegExp.$1.toUpperCase() === RegExp.$1 && RegExp.$1.toLowerCase() !== RegExp.$1)
                 return; // ignore unused constants
         }
 
