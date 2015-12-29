@@ -143,8 +143,8 @@ handler.handlesLanguage = function(language) {
     return language === "javascript" || language == "jsx";
 };
 
-handler.analyze = function(value, ast, options, callback) {
-    if (options.minimalAnalysis)
+handler.analyze = function(value, ast, callback, minimalAnalysis) {
+    if (minimalAnalysis)
         return callback();
     callback(handler.analyzeSync(value, ast));
 };
