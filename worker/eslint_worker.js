@@ -7,6 +7,7 @@ define(function(require, exports, module) {
 
 var baseLanguageHandler = require('plugins/c9.ide.language/base_handler');
 var workerUtil = require('plugins/c9.ide.language/worker_util');
+// var acorn = require("acorn/dist/acorn");
 var linter = require("./eslint_browserified");
 var handler = module.exports = Object.create(baseLanguageHandler);
 var util = require("plugins/c9.ide.language/worker_util");
@@ -76,7 +77,7 @@ handler.init = function(callback) {
     rules["no-irregular-whitespace"] = 3;
     rules["no-negated-in-lhs"] = 1;
     rules["no-regex-spaces"] = 3;
-    rules["no-reserved-keys"] = 3;
+    rules["quote-props"] = 3;
     rules["no-unreachable"] = 1;
     rules["use-isnan"] = 2;
     rules["valid-typeof"] = 1;
@@ -215,7 +216,7 @@ handler.analyzeSync = function(value, ast) {
 
         var ec;
         if (m.message.match(/is not defined|was used before it was defined|is already declared|is already defined|unexpected identifier|defined but never used/i)) {
-            var line = doc.getLine(m.line - 1);
+            var line = doc.getLine(m.line);
             var id = workerUtil.getFollowingIdentifier(line, m.column);
             if (m.message.match(/is already defined/) && line.match("for \\(var " + id))
                 return;
@@ -230,7 +231,7 @@ handler.analyzeSync = function(value, ast) {
             return;
         }
         if (m.message.match(/missing semicolon/i)) {
-            var line = doc.getLine(m.line - 1);
+            var line = doc.getLine(m.line);
             if (line.substr(m.column).match(/\s*}/))
                 return; // allow missing semi at end of block
             // HACK: allow missing semi at end of aura definitions
@@ -243,7 +244,7 @@ handler.analyzeSync = function(value, ast) {
             
         markers.push({
             pos: {
-                sl: m.line - 1,
+                sl: m.line,
                 sc: m.column,
                 ec: ec
             },
