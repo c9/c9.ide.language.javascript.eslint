@@ -1414,7 +1414,7 @@ pp.parseStatement = function (declaration, topLevel) {
     case _tokentype.types._import:
       if (!this.options.allowImportExportEverywhere) {
         if (!topLevel) this.raise(this.start, "'import' and 'export' may only appear at the top level");
-        if (!this.inModule) this.raise(this.start, "'import' and 'export' may appear only with 'sourceType: module'");
+        // if (!this.inModule) this.raise(this.start, "'import' and 'export' may appear only with 'sourceType: module'");
       }
       return starttype === _tokentype.types._import ? this.parseImport(node) : this.parseExport(node);
 
@@ -4031,7 +4031,7 @@ function resetExtra() {
         loc: false,
         comment: false,
         comments: [],
-        tolerant: false,
+        tolerant: true,
         errors: [],
         strict: false,
         ecmaFeatures: {},
@@ -4050,25 +4050,7 @@ var tt = acorn.tokTypes,
 tt.jsxAttrValueToken = {};
 
 function isValidNode(node) {
-    var ecma = extra.ecmaFeatures;
-
-    switch (node.type) {
-        case "Identifier":
-            return !extra.isModule || node.name !== "await";
-
-        case "ExperimentalSpreadProperty":
-        case "ExperimentalRestProperty":
-            return ecma.experimentalObjectRestSpread;
-
-        case "ImportDeclaration":
-        case "ExportNamedDeclaration":
-        case "ExportDefaultDeclaration":
-        case "ExportAllDeclaration":
-            return extra.isModule;
-
-        default:
-            return true;
-    }
+    return true;
 }
 
 function esprimaFinishNode(result) {
@@ -4119,26 +4101,7 @@ function esprimaFinishNode(result) {
 }
 
 function isValidToken(parser) {
-    var ecma = extra.ecmaFeatures;
-    var type = parser.type;
-
-    switch (type) {
-        case tt.jsxName:
-        case tt.jsxText:
-        case tt.jsxTagStart:
-        case tt.jsxTagEnd:
-            return ecma.jsx;
-
-        case tt.regexp:
-            if (extra.ecmaVersion < 6 && parser.value.flags && parser.value.flags.indexOf("y") > -1) {
-                return false;
-            }
-
-            return true;
-
-        default:
-            return true;
-    }
+    return true;
 }
 
 function wrapFinishNode(finishNode) {
@@ -11022,7 +10985,7 @@ var Referencer = (function (_esrecurse$Visitor2) {
             value: function ImportDeclaration(node) {
                 var importer;
 
-                assert(this.scopeManager.__isES6() && this.scopeManager.isModule(), "ImportDeclaration should appear when the mode is ES6 and in the module context.");
+                // assert(this.scopeManager.__isES6() && this.scopeManager.isModule(), "ImportDeclaration should appear when the mode is ES6 and in the module context.");
 
                 importer = new Importer(node, this);
                 importer.visit(node);
@@ -18802,8 +18765,6 @@ function validateRuleOptions(id, options, source) {
         severity = options;
         localOptions = [];
     }
-
-    validSeverity = (severity === 0 || severity === 1 || severity === 2);
 
     if (validateRule) {
         validateRule(localOptions);

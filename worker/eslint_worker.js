@@ -73,11 +73,12 @@ handler.init = function(callback) {
     rules["no-dupe-keys"] = 3;
     rules["no-eval"] = 1;
     rules["no-func-assign"] = 1;
+    rules["no-extra-semi"] = 3;
     rules["no-invalid-regexp"] = 1;
     rules["no-irregular-whitespace"] = 3;
     rules["no-negated-in-lhs"] = 1;
     rules["no-regex-spaces"] = 3;
-    rules["quote-props"] = 3;
+    rules["quote-props"] = 0;
     rules["no-unreachable"] = 1;
     rules["use-isnan"] = 2;
     rules["valid-typeof"] = 1;
@@ -134,6 +135,8 @@ function loadConfigFile(initialLoad, callback) {
         if (err && !callback)
             util.showError(err);
         userConfig = result;
+        if (userConfig && userConfig.rules && userConfig.rules["semi"] != undefined)
+            userConfig.semi = true;
         if (!initialLoad)
             util.refreshAllMarkers();
         callback && callback();
@@ -177,11 +180,11 @@ handler.analyzeSync = function(value, ast) {
     ];
     config.rules["no-undef"] =
         handler.isFeatureEnabled("undeclaredVars") ? 1 : 0;
-    config.rules["semi"] =
-        handler.isFeatureEnabled("semi") ? 3 : 0;
-    if (config.rules === defaultRules)
-        config.rules["no-extra-semi"] =
+    
+    if (!config.semi) {
+        config.rules["semi"] =
             handler.isFeatureEnabled("semi") ? 3 : 0;
+    }
 
     var isJson = this.path.match(/\.(json|run|settings|build)$/);
     if (isJson)
