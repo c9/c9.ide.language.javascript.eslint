@@ -4212,7 +4212,7 @@ pp.raise = function(pos, message) {
     var err = new SyntaxError(message);
     err.index = pos;
     err.lineNumber = loc.line;
-    err.column = loc.column + 1; // acorn uses 0-based columns
+    err.column = loc.column;
     throw err;
 };
 
@@ -4595,7 +4595,7 @@ module.exports={
 var globals = require("globals");
 
 module.exports = {
-    builtin: globals.es5,
+    builtin: globals.es6,
     browser: {
         globals: globals.browser
     },
@@ -19257,7 +19257,7 @@ module.exports = (function() {
         } catch (ex) {
 
             var message = ex.message.replace(/^line \d+:/i, "").trim();
-            var source = (ex.lineNumber) ? SourceCode.splitLines(text)[ex.lineNumber - 1] : null;
+            var source = (ex.lineNumber) ? SourceCode.splitLines(text)[ex.lineNumber] : null;
 
             messages.push({
                 ruleId: null,
@@ -19501,7 +19501,7 @@ module.exports = (function() {
             line: location.line,
             column: location.column + 1,   // switch to 1-base instead of 0-base
             nodeType: node && node.type,
-            source: sourceCode.lines[location.line - 1] || ""
+            source: sourceCode.lines[location.line] || ""
         };
 
         if (fix && Array.isArray(fix.range) && (typeof fix.text === "string")) {
@@ -27606,8 +27606,8 @@ module.exports = function(context) {
 
     function testCodeAroundComment(node) {
 
-        var startLine = String(context.getSourceLines()[node.loc.start.line - 1]);
-        var endLine = String(context.getSourceLines()[node.loc.end.line - 1]);
+        var startLine = String(context.getSourceLines()[node.loc.start.line]);
+        var endLine = String(context.getSourceLines()[node.loc.end.line]);
 
         var preamble = startLine.slice(0, node.loc.start.column).trim();
 
@@ -28733,8 +28733,8 @@ module.exports = function(context) {
                     blankCounter++;
                 } else {
                     location = {
-                        line: lastLocation + 1,
-                        column: 1
+                        line: lastLocation,
+                        column: 0
                     };
                     if (lastLocation < firstOfEndingBlankLines) {
                         if (blankCounter >= max) {
@@ -30247,7 +30247,7 @@ module.exports = function(context) {
                         continue;
                     }
                     location = {
-                        line: i + 1,
+                        line: i,
                         column: matches.index
                     };
 
@@ -34895,7 +34895,7 @@ module.exports = function(context) {
             rule = styleRules[type],
             commentIdentifier = type === "block" ? "/*" : "//";
 
-        if (node.value.length === 0) {
+        if (node.value.length === 0 || type === "block") {
             return;
         }
 

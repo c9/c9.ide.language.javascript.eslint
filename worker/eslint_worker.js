@@ -216,6 +216,9 @@ handler.analyzeSync = function(value, ast) {
             if (RegExp.$1.toUpperCase() === RegExp.$1 && RegExp.$1.toLowerCase() !== RegExp.$1)
                 return; // ignore unused constants
         }
+        
+        // work around column offset bug
+        m.column--;
 
         var ec;
         if (m.message.match(/is not defined|was used before it was defined|is already declared|is already defined|unexpected identifier|defined but never used/i)) {
@@ -242,8 +245,6 @@ handler.analyzeSync = function(value, ast) {
                 && line.match(/^\s*\}\)\s*$/))
                 return;
         }
-        if (m.message.match(/unexpected identifier/i))
-            m.column--; // work around column offset bug
             
         markers.push({
             pos: {
