@@ -151,6 +151,8 @@ handler.analyzeSync = function(value, ast) {
 
     var config = this.isFeatureEnabled("eslintrc") && userConfig || {};
 
+    delete config.parser; // we only support espree
+
     config.rules = config.rules || defaultRules;
     config.env = config.env || defaultEnv;
     config.globals = config.globals || defaultGlobals;
