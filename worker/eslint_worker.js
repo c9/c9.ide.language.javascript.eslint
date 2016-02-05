@@ -167,8 +167,6 @@ handler.analyzeSync = function(value, ast, path) {
     ];
     config.rules["no-undef"] =
         handler.isFeatureEnabled("undeclaredVars") ? 1 : 0;
-    if (/\.jsx/.test(path))
-        config.rules["no-unused-vars"] = 0; // doesn't work with JSX
     
     if (!config.semi) {
         config.rules["semi"] =
