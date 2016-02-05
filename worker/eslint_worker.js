@@ -135,7 +135,7 @@ handler.handlesLanguage = function(language) {
 handler.analyze = function(value, ast, options, callback) {
     if (options.minimalAnalysis)
         return callback();
-    callback(handler.analyzeSync(value, ast));
+    callback(handler.analyzeSync(value, ast, options.path));
 };
 
 handler.getMaxFileSizeSupported = function() {
@@ -143,7 +143,7 @@ handler.getMaxFileSizeSupported = function() {
     return .5 * 10 * 1000 * 80;
 };
 
-handler.analyzeSync = function(value, ast) {
+handler.analyzeSync = function(value, ast, path) {
     var doc = this.doc;
     var markers = [];
     if (!workerUtil.isFeatureEnabled("hints"))
@@ -167,6 +167,8 @@ handler.analyzeSync = function(value, ast) {
     ];
     config.rules["no-undef"] =
         handler.isFeatureEnabled("undeclaredVars") ? 1 : 0;
+    if (/\.jsx/.test(path))
+        config.rules["no-unused-vars"] = 0; // doesn't work with JSX
     
     if (!config.semi) {
         config.rules["semi"] =
