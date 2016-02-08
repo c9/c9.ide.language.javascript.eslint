@@ -21,7 +21,7 @@ var defaultEnv = {
     "builtin": true,
     "node": true,
     "jasmine": false,
-    "mocha": false,
+    "mocha": true,
     "es6": true,
     "jquery": false,
     "meteor": false,
@@ -200,7 +200,7 @@ handler.analyzeSync = function(value, ast, path) {
         if (isJson && level !== "error")
             return;
 
-        if (m.message.match(/(.*) is defined but never used/)) {
+        if (m.message.match(/'([^']*)' is defined but never used/)) {
             if (RegExp.$1.toUpperCase() === RegExp.$1 && RegExp.$1.toLowerCase() !== RegExp.$1)
                 return; // ignore unused constants
         }
@@ -216,13 +216,9 @@ handler.analyzeSync = function(value, ast, path) {
                 return;
             ec = m.column + id.length;
         }
-        if (m.message.match(/"?(.*?)"? is not defined/)) {
+        if (m.message.match(/'([^']*)' is not defined/)) {
             // TODO: quickfix :)
             m.message = RegExp.$1 + " is not defined; please fix or add /*global " + RegExp.$1 + "*/";
-        }
-        if (m.message.match(/"?(describe|it|(before|after)(Each)?|suite|test|setup|teardown)"? is not defined/)) {
-            // HACK: ignore mocha globals, seeing those in too many places
-            return;
         }
         if (m.message.match(/missing semicolon/i)) {
             var line = doc.getLine(m.line);
