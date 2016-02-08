@@ -165,6 +165,7 @@ handler.analyzeSync = function(value, ast, path) {
             args: handler.isFeatureEnabled("unusedFunctionArgs") ? "all" : "none"
         }
     ];
+    config.rules["jsx-uses-vars"] = 2;
     config.rules["no-undef"] =
         handler.isFeatureEnabled("undeclaredVars") ? 1 : 0;
     

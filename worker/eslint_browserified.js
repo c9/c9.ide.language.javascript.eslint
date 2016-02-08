@@ -1415,7 +1415,7 @@ pp.parseStatement = function (declaration, topLevel) {
     case _tokentype.types._import:
       if (!this.options.allowImportExportEverywhere) {
         if (!topLevel) this.raise(this.start, "'import' and 'export' may only appear at the top level");
-        if (!this.inModule) this.raise(this.start, "'import' and 'export' may appear only with 'sourceType: module'");
+        // if (!this.inModule) this.raise(this.start, "'import' and 'export' may appear only with 'sourceType: module'");
       }
       return starttype === _tokentype.types._import ? this.parseImport(node) : this.parseExport(node);
 
@@ -4033,7 +4033,7 @@ function resetExtra() {
         loc: false,
         comment: false,
         comments: [],
-        tolerant: false,
+        tolerant: true,
         errors: [],
         strict: false,
         ecmaFeatures: {},
@@ -4052,6 +4052,7 @@ var tt = acorn.tokTypes,
 tt.jsxAttrValueToken = {};
 
 function isValidNode(node) {
+    return true;
     var ecma = extra.ecmaFeatures;
 
     switch (node.type) {
@@ -4121,6 +4122,7 @@ function esprimaFinishNode(result) {
 }
 
 function isValidToken(parser) {
+    return true;
     var ecma = extra.ecmaFeatures;
     var type = parser.type;
 
@@ -4289,7 +4291,7 @@ pp.raise = function(pos, message) {
     var err = new SyntaxError(message);
     err.index = pos;
     err.lineNumber = loc.line;
-    err.column = loc.column + 1; // acorn uses 0-based columns
+    err.column = loc.column; // acorn uses 0-based columns
     throw err;
 };
 
@@ -4677,7 +4679,7 @@ module.exports={
 var globals = require("globals");
 
 module.exports = {
-    builtin: globals.es5,
+    builtin: globals.es6,
     browser: {
         globals: globals.browser
     },
@@ -11425,7 +11427,7 @@ var Referencer = function (_esrecurse$Visitor2) {
         value: function ImportDeclaration(node) {
             var importer;
 
-            (0, _assert2.default)(this.scopeManager.__isES6() && this.scopeManager.isModule(), 'ImportDeclaration should appear when the mode is ES6 and in the module context.');
+            // (0, _assert2.default)(this.scopeManager.__isES6() && this.scopeManager.isModule(), 'ImportDeclaration should appear when the mode is ES6 and in the module context.');
 
             importer = new Importer(node, this);
             importer.visit(node);
@@ -19266,8 +19268,8 @@ module.exports={
 		"ClientRect": false,
 		"ClientRectList": false,
 		"ClipboardEvent": false,
-		"close": false,
-		"closed": false,
+		// "close": false,
+		// "closed": false,
 		"CloseEvent": false,
 		"Comment": false,
 		"CompositionEvent": false,
@@ -19331,8 +19333,8 @@ module.exports={
 		"FileError": false,
 		"FileList": false,
 		"FileReader": false,
-		"find": false,
-		"focus": false,
+		// "find": false,
+		// "focus": false,
 		"FocusEvent": false,
 		"FontFace": false,
 		"FormData": false,
@@ -19346,7 +19348,7 @@ module.exports={
 		"getSelection": false,
 		"HashChangeEvent": false,
 		"Headers": false,
-		"history": false,
+		// "history": false,
 		"History": false,
 		"HTMLAllCollection": false,
 		"HTMLAnchorElement": false,
@@ -19489,12 +19491,11 @@ module.exports={
 		"MimeType": false,
 		"MimeTypeArray": false,
 		"MouseEvent": false,
-		"moveBy": false,
-		"moveTo": false,
+		// "moveBy": false,
+		// "moveTo": false,
 		"MutationEvent": false,
 		"MutationObserver": false,
 		"MutationRecord": false,
-		"name": false,
 		"NamedNodeMap": false,
 		"navigator": false,
 		"Navigator": false,
@@ -19513,18 +19514,18 @@ module.exports={
 		"onload": true,
 		"onresize": true,
 		"onunload": true,
-		"open": false,
+		// "open": false,
 		"openDatabase": false,
-		"opener": false,
-		"opera": false,
+		// "opener": false,
+		// "opera": false,
 		"Option": false,
 		"OscillatorNode": false,
-		"outerHeight": false,
-		"outerWidth": false,
+		// "outerHeight": false,
+		// "outerWidth": false,
 		"PageTransitionEvent": false,
 		"pageXOffset": false,
 		"pageYOffset": false,
-		"parent": false,
+		// "parent": false,
 		"Path2D": false,
 		"performance": false,
 		"Performance": false,
@@ -19542,7 +19543,7 @@ module.exports={
 		"PluginArray": false,
 		"PopStateEvent": false,
 		"postMessage": false,
-		"print": false,
+		// "print": false,
 		"ProcessingInstruction": false,
 		"ProgressEvent": false,
 		"prompt": false,
@@ -19555,28 +19556,28 @@ module.exports={
 		"removeEventListener": false,
 		"Request": false,
 		"requestAnimationFrame": false,
-		"resizeBy": false,
-		"resizeTo": false,
+		// "resizeBy": false,
+		// "resizeTo": false,
 		"Response": false,
 		"RTCIceCandidate": false,
 		"RTCSessionDescription": false,
-		"screen": false,
+		// "screen": false,
 		"Screen": false,
-		"screenLeft": false,
+		// "screenLeft": false,
 		"ScreenOrientation": false,
-		"screenTop": false,
-		"screenX": false,
-		"screenY": false,
+		// "screenTop": false,
+		// "screenX": false,
+		// "screenY": false,
 		"ScriptProcessorNode": false,
-		"scroll": false,
-		"scrollbars": false,
-		"scrollBy": false,
-		"scrollTo": false,
-		"scrollX": false,
-		"scrollY": false,
+		// "scroll": false,
+		// "scrollbars": false,
+		// "scrollBy": false,
+		// "scrollTo": false,
+		// "scrollX": false,
+		// "scrollY": false,
 		"SecurityPolicyViolationEvent": false,
 		"Selection": false,
-		"self": false,
+		// "self": false,
 		"ServiceWorker": false,
 		"ServiceWorkerContainer": false,
 		"ServiceWorkerRegistration": false,
@@ -19589,9 +19590,9 @@ module.exports={
 		"speechSynthesis": false,
 		"SpeechSynthesisEvent": false,
 		"SpeechSynthesisUtterance": false,
-		"status": false,
-		"statusbar": false,
-		"stop": false,
+		// "status": false,
+		// "statusbar": false,
+		// "stop": false,
 		"Storage": false,
 		"StorageEvent": false,
 		"styleMedia": false,
@@ -19770,8 +19771,8 @@ module.exports={
 		"TextTrackList": false,
 		"TimeEvent": false,
 		"TimeRanges": false,
-		"toolbar": false,
-		"top": false,
+		// "toolbar": false,
+		// "top": false,
 		"Touch": false,
 		"TouchEvent": false,
 		"TouchList": false,
@@ -23353,7 +23354,7 @@ function validateRuleOptions(id, options, source) {
         localOptions = [];
     }
 
-    validSeverity = (severity === 0 || severity === 1 || severity === 2);
+    // validSeverity = (severity === 0 || severity === 1 || severity === 2);
 
     if (validateRule) {
         validateRule(localOptions);
@@ -23903,7 +23904,7 @@ module.exports = (function() {
         } catch (ex) {
 
             var message = ex.message.replace(/^line \d+:/i, "").trim();
-            var source = (ex.lineNumber) ? SourceCode.splitLines(text)[ex.lineNumber - 1] : null;
+            var source = (ex.lineNumber) ? SourceCode.splitLines(text)[ex.lineNumber] : null;
 
             messages.push({
                 ruleId: null,
@@ -24152,7 +24153,7 @@ module.exports = (function() {
             line: location.line,
             column: location.column + 1,   // switch to 1-base instead of 0-base
             nodeType: node && node.type,
-            source: sourceCode.lines[location.line - 1] || ""
+            source: sourceCode.lines[location.line] || ""
         };
 
         if (fix && Array.isArray(fix.range) && (typeof fix.text === "string") && (!meta || !meta.docs || meta.docs.fixable)) {
@@ -28901,7 +28902,8 @@ module.exports = function(context) {
             });
         }
     }
-
+    function noop() {}
+    
     function parseOptions(options) {
         var before = !options || options.before !== false;
         var after = !options || options.after !== false;
@@ -28923,6 +28925,10 @@ module.exports = function(context) {
                     before: thisBefore ? expectSpaceBefore : unexpectSpaceBefore,
                     after: thisAfter ? expectSpaceAfter : unexpectSpaceAfter
                 };
+                if (typeof thisBefore != "boolean")
+                    retv[key].before = noop;
+                if (typeof thisAfter != "boolean")
+                    retv[key].after = noop;
             } else {
                 retv[key] = defaultValue;
             }
@@ -32754,8 +32760,8 @@ module.exports = function(context) {
 
     function testCodeAroundComment(node) {
 
-        var startLine = String(context.getSourceLines()[node.loc.start.line - 1]);
-        var endLine = String(context.getSourceLines()[node.loc.end.line - 1]);
+        var startLine = String(context.getSourceLines()[node.loc.start.line]);
+        var endLine = String(context.getSourceLines()[node.loc.end.line]);
 
         var preamble = startLine.slice(0, node.loc.start.column).trim();
 
@@ -33996,8 +34002,8 @@ module.exports = function(context) {
                     blankCounter++;
                 } else {
                     location = {
-                        line: lastLocation + 1,
-                        column: 1
+                        line: lastLocation ,
+                        column: 0
                     };
                     if (lastLocation < firstOfEndingBlankLines) {
                         if (blankCounter >= max) {
@@ -35628,7 +35634,7 @@ module.exports = function(context) {
                         continue;
                     }
                     location = {
-                        line: i + 1,
+                        line: i,
                         column: matches.index
                     };
 
@@ -40365,7 +40371,7 @@ module.exports = function(context) {
             rule = styleRules[type],
             commentIdentifier = type === "block" ? "/*" : "//";
 
-        if (node.value.length === 0) {
+        if (node.value.length === 0 || type === "block") {
             return;
         }
 
