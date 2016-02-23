@@ -133,7 +133,7 @@ pp.parseMaybeConditional = function (noIn, refDestructuringErrors) {
 pp.parseExprOps = function (noIn, refDestructuringErrors) {
   var startPos = this.start,
       startLoc = this.startLoc;
-  var expr = this.parseMaybeUnary(refDestructuringErrors);
+  var expr = this.parseMaybeUnary(refDestructuringErrors, false);
   if (this.checkExpressionErrors(refDestructuringErrors)) return expr;
   return this.parseExprOp(expr, startPos, startLoc, -1, noIn);
 };
@@ -142,47 +142,56 @@ pp.parseExprOp = function (left, leftStartPos, leftStartLoc, minPrec, noIn) {
   var prec = this.type.binop;
   if (prec != null && (!noIn || this.type !== _tokentype.types._in)) {
     if (prec > minPrec) {
-      var node = this.startNodeAt(leftStartPos, leftStartLoc);
-      node.left = left;
-      node.operator = this.value;
-      var op = this.type;
+      var logical = this.type === _tokentype.types.logicalOR || this.type === _tokentype.types.logicalAND;
+      var op = this.value;
       this.next();
       var startPos = this.start,
           startLoc = this.startLoc;
-      node.right = this.parseExprOp(this.parseMaybeUnary(), startPos, startLoc, prec, noIn);
-      this.finishNode(node, op === _tokentype.types.logicalOR || op === _tokentype.types.logicalAND ? "LogicalExpression" : "BinaryExpression");
+      var right = this.parseExprOp(this.parseMaybeUnary(null, false), startPos, startLoc, prec, noIn);
+      var node = this.buildBinary(leftStartPos, leftStartLoc, left, right, op, logical);
       return this.parseExprOp(node, leftStartPos, leftStartLoc, minPrec, noIn);
     }
   }
   return left;
 };
 
-pp.parseMaybeUnary = function (refDestructuringErrors) {
+pp.buildBinary = function (startPos, startLoc, left, right, op, logical) {
+  var node = this.startNodeAt(startPos, startLoc);
+  node.left = left;
+  node.operator = op;
+  node.right = right;
+  return this.finishNode(node, logical ? "LogicalExpression" : "BinaryExpression");
+};
+
+pp.parseMaybeUnary = function (refDestructuringErrors, sawUnary) {
+  var startPos = this.start,
+      startLoc = this.startLoc,
+      expr = undefined;
   if (this.type.prefix) {
     var node = this.startNode(),
         update = this.type === _tokentype.types.incDec;
     node.operator = this.value;
     node.prefix = true;
     this.next();
-    node.argument = this.parseMaybeUnary();
+    node.argument = this.parseMaybeUnary(null, true);
     this.checkExpressionErrors(refDestructuringErrors, true);
-    if (update) this.checkLVal(node.argument);else if (this.strict && node.operator === "delete" && node.argument.type === "Identifier") this.raiseRecoverable(node.start, "Deleting local variable in strict mode");
-    return this.finishNode(node, update ? "UpdateExpression" : "UnaryExpression");
+    if (update) this.checkLVal(node.argument);else if (this.strict && node.operator === "delete" && node.argument.type === "Identifier") this.raiseRecoverable(node.start, "Deleting local variable in strict mode");else sawUnary = true;
+    expr = this.finishNode(node, update ? "UpdateExpression" : "UnaryExpression");
+  } else {
+    expr = this.parseExprSubscripts(refDestructuringErrors);
+    if (this.checkExpressionErrors(refDestructuringErrors)) return expr;
+    while (this.type.postfix && !this.canInsertSemicolon()) {
+      var node = this.startNodeAt(startPos, startLoc);
+      node.operator = this.value;
+      node.prefix = false;
+      node.argument = expr;
+      this.checkLVal(expr);
+      this.next();
+      expr = this.finishNode(node, "UpdateExpression");
+    }
   }
-  var startPos = this.start,
-      startLoc = this.startLoc;
-  var expr = this.parseExprSubscripts(refDestructuringErrors);
-  if (this.checkExpressionErrors(refDestructuringErrors)) return expr;
-  while (this.type.postfix && !this.canInsertSemicolon()) {
-    var node = this.startNodeAt(startPos, startLoc);
-    node.operator = this.value;
-    node.prefix = false;
-    node.argument = expr;
-    this.checkLVal(expr);
-    this.next();
-    expr = this.finishNode(node, "UpdateExpression");
-  }
-  return expr;
+
+  if (!sawUnary && this.eat(_tokentype.types.starstar)) return this.buildBinary(startPos, startLoc, expr, this.parseMaybeUnary(null, false), "**", false);else return expr;
 };
 
 pp.parseExprSubscripts = function (refDestructuringErrors) {
@@ -242,6 +251,7 @@ pp.parseExprAtom = function (refDestructuringErrors) {
       if (this.value == "async" && /^[ \t]*(function\b|\(|\w+[ \t]*=>)/.test(this.input.slice(this.end))) {
         node = this.startNode();
         this.next();
+        this.potentialArrowAt = this.start;
         return this.parseExprAtom(refDestructuringErrors);
       }
       if (this.value == "await" && /^[ \t]+[\w\x1f-\uffff]/.test(this.input.slice(this.end))) {
@@ -637,6 +647,7 @@ var reservedWords = {
   3: "abstract boolean byte char class double enum export extends final float goto implements import int interface long native package private protected public short static super synchronized throws transient volatile",
   5: "class enum extends super const export import",
   6: "enum",
+  7: "enum",
   strict: "implements interface let package private protected public static yield",
   strictBind: "eval arguments"
 };
@@ -729,7 +740,7 @@ var _whitespace = _dereq_("./whitespace");
 exports.isNewLine = _whitespace.isNewLine;
 exports.lineBreak = _whitespace.lineBreak;
 exports.lineBreakG = _whitespace.lineBreakG;
-var version = "2.7.1";
+var version = "3.0.2";
 
 exports.version = version;
 function parse(input, options) {
@@ -1415,10 +1426,13 @@ pp.parseStatement = function (declaration, topLevel) {
     case _tokentype.types._import:
       if (!this.options.allowImportExportEverywhere) {
         if (!topLevel) this.raise(this.start, "'import' and 'export' may only appear at the top level");
-        // if (!this.inModule) this.raise(this.start, "'import' and 'export' may appear only with 'sourceType: module'");
+        if (!this.inModule) this.raise(this.start, "'import' and 'export' may appear only with 'sourceType: module'");
       }
       return starttype === _tokentype.types._import ? this.parseImport(node) : this.parseExport(node);
 
+    case _tokentype.types.at:
+      this.next();
+      return this.parseExpression();
     default:
       var maybeName = this.value,
           expr = this.parseExpression();
@@ -1721,8 +1735,15 @@ pp.parseClass = function (node, isStatement) {
   var hadConstructor = false;
   classBody.body = [];
   this.expect(_tokentype.types.braceL);
+  var decorators = [];
   while (!this.eat(_tokentype.types.braceR)) {
     if (this.eat(_tokentype.types.semi)) continue;
+    if (this.type == _tokentype.types.at) {
+      this.next();
+      var expr = this.parseMaybeAssign(true);
+      decorators.push(expr);
+      continue;
+    }
     var method = this.startNode();
     var isGenerator = this.eat(_tokentype.types.star);
     var isMaybeStatic = this.type === _tokentype.types.name && this.value === "static";
@@ -1752,6 +1773,11 @@ pp.parseClass = function (node, isStatement) {
       }
     }
     this.parseClassMethod(classBody, method, isGenerator);
+    if (decorators.length) {
+      var body = method.value.body.body;
+      if (body) body.unshift.apply(body, decorators);
+      decorators = [];
+    }
     if (isGetSet) {
       var paramCount = method.kind === "get" ? 0 : 1;
       if (method.value.params.length !== paramCount) {
@@ -2260,7 +2286,7 @@ pp.readToken_lt_gt = function (code) {
     this.skipSpace();
     return this.nextToken();
   }
-  if (next === 61) size = this.input.charCodeAt(this.pos + 2) === 61 ? 3 : 2;
+  if (next === 61) size = 2;
   return this.finishOp(_tokentype.types.relational, size);
 };
 
@@ -2342,6 +2368,8 @@ pp.getTokenFromCode = function (code) {
 
     case 126:
       return this.finishOp(_tokentype.types.prefix, 1);
+    case 64:
+      ++this.pos;return this.finishToken(_tokentype.types.at);
   }
 
   this.raise(this.pos, "Unexpected character '" + codePointToString(code) + "'");
@@ -2692,6 +2720,8 @@ var types = {
   backQuote: new TokenType("`", startsExpr),
   dollarBraceL: new TokenType("${", { beforeExpr: true, startsExpr: true }),
 
+  at: new TokenType("@", { beforeExpr: true, startsExpr: true }),
+
   eq: new TokenType("=", { beforeExpr: true, isAssign: true }),
   assign: new TokenType("_=", { beforeExpr: true, isAssign: true }),
   incDec: new TokenType("++/--", { prefix: true, postfix: true, startsExpr: true }),
@@ -2708,7 +2738,7 @@ var types = {
   modulo: binop("%", 10),
   star: binop("*", 10),
   slash: binop("/", 10),
-  starstar: binop("**", 11)
+  starstar: new TokenType("**", { beforeExpr: true })
 };
 
 exports.types = types;
@@ -4033,7 +4063,7 @@ function resetExtra() {
         loc: false,
         comment: false,
         comments: [],
-        tolerant: true,
+        tolerant: false,
         errors: [],
         strict: false,
         ecmaFeatures: {},
@@ -4052,7 +4082,6 @@ var tt = acorn.tokTypes,
 tt.jsxAttrValueToken = {};
 
 function isValidNode(node) {
-    return true;
     var ecma = extra.ecmaFeatures;
 
     switch (node.type) {
@@ -4122,7 +4151,6 @@ function esprimaFinishNode(result) {
 }
 
 function isValidToken(parser) {
-    return true;
     var ecma = extra.ecmaFeatures;
     var type = parser.type;
 
@@ -4291,7 +4319,7 @@ pp.raise = function(pos, message) {
     var err = new SyntaxError(message);
     err.index = pos;
     err.lineNumber = loc.line;
-    err.column = loc.column; // acorn uses 0-based columns
+    err.column = loc.column + 1; // acorn uses 0-based columns
     throw err;
 };
 
@@ -4679,7 +4707,7 @@ module.exports={
 var globals = require("globals");
 
 module.exports = {
-    builtin: globals.es6,
+    builtin: globals.es5,
     browser: {
         globals: globals.browser
     },
@@ -4698,6 +4726,9 @@ module.exports = {
                 globalReturn: true
             }
         }
+    },
+    "shared-node-browser": {
+        globals: globals["shared-node-browser"]
     },
     worker: {
         globals: globals.worker
@@ -4799,6 +4830,7 @@ module.exports={
         "no-else-return": 0,
         "no-empty": 2,
         "no-empty-character-class": 2,
+        "no-empty-function": 0,
         "no-empty-pattern": 2,
         "no-eq-null": 0,
         "no-eval": 0,
@@ -6964,6 +6996,7 @@ function plural(ms, n, name) {
                     name += advance();
                 }
                 while (source.charCodeAt(index) === 0x2E  /* '.' */ ||
+                        source.charCodeAt(index) === 0x2F  /* '/' */ ||
                         source.charCodeAt(index) === 0x23  /* '#' */ ||
                         source.charCodeAt(index) === 0x7E  /* '~' */) {
                     name += advance();
@@ -6972,21 +7005,33 @@ function plural(ms, n, name) {
             }
 
             if (useBrackets) {
-
-
+                skipWhiteSpace(last);
                 if (source.charCodeAt(index) === 0x3D  /* '=' */) {
                     name += advance();
+                    skipWhiteSpace(last);
+
+                    var ch;
                     var bracketDepth = 1;
                     while (index < last) {
-                        if (source.charCodeAt(index) === 0x5B /* '[' */) {
+                        ch = source.charCodeAt(index);
+
+                        if (esutils.code.isWhiteSpace(ch)) {
+                            skipWhiteSpace(last);
+                            ch = source.charCodeAt(index);
+                        }
+
+                        if (ch === 0x5B /* '[' */) {
                             bracketDepth++;
-                        } else if (source.charCodeAt(index) === 0x5D  /* ']' */ &&
+                        } else if (ch === 0x5D  /* ']' */ &&
                             --bracketDepth === 0) {
                             break;
                         }
+
                         name += advance();
                     }
                 }
+
+                skipWhiteSpace(last);
 
                 if (index >= last  || source.charCodeAt(index) !== 0x5D  /* ']' */) {
                     return null;
@@ -8898,8 +8943,10 @@ function plural(ms, n, name) {
    {"./ast":"/node_modules/doctrine/node_modules/esutils/lib/ast.js","./code":"/node_modules/doctrine/node_modules/esutils/lib/code.js","./keyword":"/node_modules/doctrine/node_modules/esutils/lib/keyword.js"}],
 
 "/node_modules/doctrine/node_modules/isarray/index.js": [function(require,module,exports){
+var toString = {}.toString;
+
 module.exports = Array.isArray || function (arr) {
-  return Object.prototype.toString.call(arr) == '[object Array]';
+  return toString.call(arr) == '[object Array]';
 };
 
 },
@@ -8911,7 +8958,7 @@ module.exports={
   "description": "JSDoc parser",
   "homepage": "https://github.com/eslint/doctrine",
   "main": "lib/doctrine.js",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "engines": {
     "node": ">=0.10.0"
   },
@@ -8943,6 +8990,7 @@ module.exports={
     "coveralls": "^2.11.2",
     "dateformat": "^1.0.11",
     "eslint": "^1.10.3",
+    "eslint-release": "^0.3.0",
     "istanbul": "^0.4.1",
     "linefix": "^0.1.1",
     "mocha": "^2.3.3",
@@ -8959,30 +9007,36 @@ module.exports={
     }
   ],
   "scripts": {
-    "test": "node Makefile.js test",
-    "lint": "node Makefile.js lint"
+    "test": "npm run lint && node Makefile.js test",
+    "lint": "eslint lib/",
+    "release": "eslint-release",
+    "alpharelease": "eslint-prerelease alpha",
+    "betarelease": "eslint-prerelease beta"
   },
   "dependencies": {
     "esutils": "^1.1.6",
-    "isarray": "0.0.1"
+    "isarray": "^1.0.0"
   },
-  "gitHead": "165fc189b184b0daa72a2ee2f696e8cf7312d288",
   "bugs": {
     "url": "https://github.com/eslint/doctrine/issues"
   },
-  "_id": "doctrine@1.1.0",
-  "_shasum": "1c36612937cf7d1596b983e9c5d0c6233eeaa3cf",
-  "_from": "doctrine@>=1.1.0 <2.0.0",
-  "_npmVersion": "1.4.29",
+  "_id": "doctrine@1.2.0",
+  "_shasum": "ff0adabd686b4faeb1e2b5c775c34a74539e784f",
+  "_from": "doctrine@>=1.2.0 <2.0.0",
+  "_npmVersion": "1.4.10",
   "_npmUser": {
     "name": "nzakas",
     "email": "nicholas@nczconsulting.com"
   },
   "dist": {
-    "shasum": "1c36612937cf7d1596b983e9c5d0c6233eeaa3cf",
-    "tarball": "http://registry.npmjs.org/doctrine/-/doctrine-1.1.0.tgz"
+    "shasum": "ff0adabd686b4faeb1e2b5c775c34a74539e784f",
+    "tarball": "http://registry.npmjs.org/doctrine/-/doctrine-1.2.0.tgz"
   },
-  "_resolved": "https://registry.npmjs.org/doctrine/-/doctrine-1.1.0.tgz"
+  "_npmOperationalInternal": {
+    "host": "packages-5-east.internal.npmjs.com",
+    "tmp": "tmp/doctrine-1.2.0.tgz_1455906515924_0.953179617645219"
+  },
+  "_resolved": "https://registry.npmjs.org/doctrine/-/doctrine-1.2.0.tgz"
 }
 
 },
@@ -10412,22 +10466,6 @@ Object.defineProperty(MapPoly.prototype, Symbol.toStringTag, d('c', 'Map'));
 },
    {"./is-native-implemented":"/node_modules/es6-map/is-native-implemented.js","./lib/iterator":"/node_modules/es6-map/lib/iterator.js","d":"/node_modules/es6-map/node_modules/d/index.js","es5-ext/array/#/clear":"/node_modules/es6-map/node_modules/es5-ext/array/#/clear.js","es5-ext/array/#/e-index-of":"/node_modules/es6-map/node_modules/es5-ext/array/#/e-index-of.js","es5-ext/object/set-prototype-of":"/node_modules/es6-map/node_modules/es5-ext/object/set-prototype-of/index.js","es5-ext/object/valid-callable":"/node_modules/es6-map/node_modules/es5-ext/object/valid-callable.js","es5-ext/object/valid-value":"/node_modules/es6-map/node_modules/es5-ext/object/valid-value.js","es6-iterator/for-of":"/node_modules/es6-map/node_modules/es6-iterator/for-of.js","es6-iterator/valid-iterable":"/node_modules/es6-map/node_modules/es6-iterator/valid-iterable.js","es6-symbol":"/node_modules/es6-map/node_modules/es6-symbol/index.js","event-emitter":"/node_modules/es6-map/node_modules/event-emitter/index.js"}],
 
-"/node_modules/escape-string-regexp/index.js": [function(require,module,exports){
-'use strict';
-
-var matchOperatorsRe = /[|\\{}()[\]^$+*?.]/g;
-
-module.exports = function (str) {
-	if (typeof str !== 'string') {
-		throw new TypeError('Expected a string');
-	}
-
-	return str.replace(matchOperatorsRe,  '\\$&');
-};
-
-},
-   {}],
-
 "/node_modules/escope/lib/definition.js": [function(require,module,exports){
 'use strict';
 
@@ -11427,7 +11465,7 @@ var Referencer = function (_esrecurse$Visitor2) {
         value: function ImportDeclaration(node) {
             var importer;
 
-            // (0, _assert2.default)(this.scopeManager.__isES6() && this.scopeManager.isModule(), 'ImportDeclaration should appear when the mode is ES6 and in the module context.');
+            (0, _assert2.default)(this.scopeManager.__isES6() && this.scopeManager.isModule(), 'ImportDeclaration should appear when the mode is ES6 and in the module context.');
 
             importer = new Importer(node, this);
             importer.visit(node);
@@ -19268,8 +19306,8 @@ module.exports={
 		"ClientRect": false,
 		"ClientRectList": false,
 		"ClipboardEvent": false,
-		// "close": false,
-		// "closed": false,
+		"close": false,
+		"closed": false,
 		"CloseEvent": false,
 		"Comment": false,
 		"CompositionEvent": false,
@@ -19333,8 +19371,8 @@ module.exports={
 		"FileError": false,
 		"FileList": false,
 		"FileReader": false,
-		// "find": false,
-		// "focus": false,
+		"find": false,
+		"focus": false,
 		"FocusEvent": false,
 		"FontFace": false,
 		"FormData": false,
@@ -19348,7 +19386,7 @@ module.exports={
 		"getSelection": false,
 		"HashChangeEvent": false,
 		"Headers": false,
-		// "history": false,
+		"history": false,
 		"History": false,
 		"HTMLAllCollection": false,
 		"HTMLAnchorElement": false,
@@ -19491,11 +19529,12 @@ module.exports={
 		"MimeType": false,
 		"MimeTypeArray": false,
 		"MouseEvent": false,
-		// "moveBy": false,
-		// "moveTo": false,
+		"moveBy": false,
+		"moveTo": false,
 		"MutationEvent": false,
 		"MutationObserver": false,
 		"MutationRecord": false,
+		"name": false,
 		"NamedNodeMap": false,
 		"navigator": false,
 		"Navigator": false,
@@ -19514,18 +19553,18 @@ module.exports={
 		"onload": true,
 		"onresize": true,
 		"onunload": true,
-		// "open": false,
+		"open": false,
 		"openDatabase": false,
-		// "opener": false,
-		// "opera": false,
+		"opener": false,
+		"opera": false,
 		"Option": false,
 		"OscillatorNode": false,
-		// "outerHeight": false,
-		// "outerWidth": false,
+		"outerHeight": false,
+		"outerWidth": false,
 		"PageTransitionEvent": false,
 		"pageXOffset": false,
 		"pageYOffset": false,
-		// "parent": false,
+		"parent": false,
 		"Path2D": false,
 		"performance": false,
 		"Performance": false,
@@ -19543,7 +19582,7 @@ module.exports={
 		"PluginArray": false,
 		"PopStateEvent": false,
 		"postMessage": false,
-		// "print": false,
+		"print": false,
 		"ProcessingInstruction": false,
 		"ProgressEvent": false,
 		"prompt": false,
@@ -19556,28 +19595,28 @@ module.exports={
 		"removeEventListener": false,
 		"Request": false,
 		"requestAnimationFrame": false,
-		// "resizeBy": false,
-		// "resizeTo": false,
+		"resizeBy": false,
+		"resizeTo": false,
 		"Response": false,
 		"RTCIceCandidate": false,
 		"RTCSessionDescription": false,
-		// "screen": false,
+		"screen": false,
 		"Screen": false,
-		// "screenLeft": false,
+		"screenLeft": false,
 		"ScreenOrientation": false,
-		// "screenTop": false,
-		// "screenX": false,
-		// "screenY": false,
+		"screenTop": false,
+		"screenX": false,
+		"screenY": false,
 		"ScriptProcessorNode": false,
-		// "scroll": false,
-		// "scrollbars": false,
-		// "scrollBy": false,
-		// "scrollTo": false,
-		// "scrollX": false,
-		// "scrollY": false,
+		"scroll": false,
+		"scrollbars": false,
+		"scrollBy": false,
+		"scrollTo": false,
+		"scrollX": false,
+		"scrollY": false,
 		"SecurityPolicyViolationEvent": false,
 		"Selection": false,
-		// "self": false,
+		"self": false,
 		"ServiceWorker": false,
 		"ServiceWorkerContainer": false,
 		"ServiceWorkerRegistration": false,
@@ -19590,9 +19629,9 @@ module.exports={
 		"speechSynthesis": false,
 		"SpeechSynthesisEvent": false,
 		"SpeechSynthesisUtterance": false,
-		// "status": false,
-		// "statusbar": false,
-		// "stop": false,
+		"status": false,
+		"statusbar": false,
+		"stop": false,
 		"Storage": false,
 		"StorageEvent": false,
 		"styleMedia": false,
@@ -19771,8 +19810,8 @@ module.exports={
 		"TextTrackList": false,
 		"TimeEvent": false,
 		"TimeRanges": false,
-		// "toolbar": false,
-		// "top": false,
+		"toolbar": false,
+		"top": false,
 		"Touch": false,
 		"TouchEvent": false,
 		"TouchList": false,
@@ -21105,46 +21144,17 @@ function extend() {
 },
    {}],
 
-"/node_modules/object-assign/index.js": [function(require,module,exports){
-'use strict';
-var hasOwnProperty = Object.prototype.hasOwnProperty;
-var propIsEnumerable = Object.prototype.propertyIsEnumerable;
+"/node_modules/lodash/lodash.js": [function(require,module,exports){
+    var reRegExpChar = /[\\^$.*+?()[\]{}|]/g,
+      reHasRegExpChar = RegExp(reRegExpChar.source);
+    exports.escapeRegExp = function escapeRegExp(string) {
+      string = toString(string);
+      return (string && reHasRegExpChar.test(string))
+        ? string.replace(reRegExpChar, '\\$&')
+        : string;
+    }
 
-function toObject(val) {
-	if (val === null || val === undefined) {
-		throw new TypeError('Object.assign cannot be called with null or undefined');
-	}
-
-	return Object(val);
-}
-
-module.exports = Object.assign || function (target, source) {
-	var from;
-	var to = toObject(target);
-	var symbols;
-
-	for (var s = 1; s < arguments.length; s++) {
-		from = Object(arguments[s]);
-
-		for (var key in from) {
-			if (hasOwnProperty.call(from, key)) {
-				to[key] = from[key];
-			}
-		}
-
-		if (Object.getOwnPropertySymbols) {
-			symbols = Object.getOwnPropertySymbols(from);
-			for (var i = 0; i < symbols.length; i++) {
-				if (propIsEnumerable.call(from, symbols[i])) {
-					to[symbols[i]] = from[symbols[i]];
-				}
-			}
-		}
-	}
-
-	return to;
-};
-
+    exports.assign = Object.assign;
 },
    {}],
 
@@ -21924,7 +21934,8 @@ function CodePathSegment(id, allPrevSegments, reachable) {
     this.reachable = reachable;
 
     Object.defineProperty(this, "internal", {value: {
-        used: false
+        used: false,
+        loopedPrevSegments: []
     }});
 
     if (debug.enabled) {
@@ -21932,6 +21943,14 @@ function CodePathSegment(id, allPrevSegments, reachable) {
         this.internal.exitNodes = [];
     }
 }
+
+CodePathSegment.prototype = {
+    constructor: CodePathSegment,
+
+    isLoopedPrevSegment: function(segment) {
+        return this.internal.loopedPrevSegments.indexOf(segment) !== -1;
+    }
+};
 
 CodePathSegment.newRoot = function(id) {
     return new CodePathSegment(id, [], true);
@@ -21969,6 +21988,10 @@ CodePathSegment.markUsed = function(segment) {
             segment.allPrevSegments[i].allNextSegments.push(segment);
         }
     }
+};
+
+CodePathSegment.markPrevSegmentAsLooped = function(segment, prevSegment) {
+    segment.internal.loopedPrevSegments.push(prevSegment);
 };
 
 module.exports = CodePathSegment;
@@ -22077,6 +22100,10 @@ function makeLooped(state, fromSegments, toSegments) {
         }
         fromSegment.allNextSegments.push(toSegment);
         toSegment.allPrevSegments.push(fromSegment);
+
+        if (toSegment.allPrevSegments.length >= 2) {
+            CodePathSegment.markPrevSegmentAsLooped(toSegment, fromSegment);
+        }
 
         state.notifyLooped(fromSegment, toSegment);
     }
@@ -22874,6 +22901,90 @@ CodePath.prototype = {
 
     get currentSegments() {
         return this.internal.currentSegments;
+    },
+
+    traverseSegments: function(options, callback) {
+        if (typeof options === "function") {
+            callback = options;
+            options = null;
+        }
+
+        options = options || {};
+        var startSegment = options.first || this.internal.initialSegment;
+        var lastSegment = options.last;
+
+        var item = null;
+        var index = 0;
+        var end = 0;
+        var segment = null;
+        var visited = Object.create(null);
+        var stack = [[startSegment, 0]];
+        var skippedSegment = null;
+        var broken = false;
+        var controller = {
+            skip: function() {
+                if (stack.length <= 1) {
+                    broken = true;
+                } else {
+                    skippedSegment = stack[stack.length - 2][0];
+                }
+            },
+            break: function() {
+                broken = true;
+            }
+        };
+
+        function isVisited(prevSegment) {
+            return (
+                visited[prevSegment.id] ||
+                segment.isLoopedPrevSegment(prevSegment)
+            );
+        }
+
+        while (stack.length > 0) {
+            item = stack[stack.length - 1];
+            segment = item[0];
+            index = item[1];
+
+            if (index === 0) {
+                if (visited[segment.id]) {
+                    stack.pop();
+                    continue;
+                }
+                if (segment !== startSegment &&
+                    segment.prevSegments.length > 0 &&
+                    !segment.prevSegments.every(isVisited)
+                ) {
+                    stack.pop();
+                    continue;
+                }
+                if (skippedSegment && segment.prevSegments.indexOf(skippedSegment) !== -1) {
+                    skippedSegment = null;
+                }
+                visited[segment.id] = true;
+
+                if (!skippedSegment) {
+                    callback.call(this, segment, controller); // eslint-disable-line callback-return
+                    if (segment === lastSegment) {
+                        controller.skip();
+                    }
+                    if (broken) {
+                        break;
+                    }
+                }
+            }
+
+            end = segment.nextSegments.length - 1;
+            if (index < end) {
+                item[1] += 1;
+                stack.push([segment.nextSegments[index], 0]);
+            } else if (index === end) {
+                item[0] = segment.nextSegments[index];
+                item[1] = 0;
+            } else {
+                stack.pop();
+            }
+        }
     }
 };
 
@@ -23181,9 +23292,9 @@ module.exports = IdGenerator;
 "/tmp/config/config-ops.js": [function(require,module,exports){
 "use strict";
 
-var debug = require("debug"),
-    Environments = require("./environments"),
-    assign = require("object-assign");
+var lodash = require("lodash"),
+    debug = require("debug"),
+    Environments = require("./environments");
 
 debug = debug("eslint:config-ops");
 
@@ -23214,11 +23325,11 @@ module.exports = {
                 if (environment) {
                     debug("Creating config for environment " + name);
                     if (environment.globals) {
-                        assign(envConfig.globals, environment.globals);
+                        lodash.assign(envConfig.globals, environment.globals);
                     }
 
                     if (environment.parserOptions) {
-                        assign(envConfig.parserOptions, environment.parserOptions);
+                        lodash.assign(envConfig.parserOptions, environment.parserOptions);
                     }
                 }
             });
@@ -23296,7 +23407,7 @@ module.exports = {
 };
 
 },
-   {"./environments":"/tmp/config/environments.js","debug":"/node_modules/debug/browser.js","object-assign":"/node_modules/object-assign/index.js"}],
+   {"./environments":"/tmp/config/environments.js","debug":"/node_modules/debug/browser.js","lodash":"/node_modules/lodash/lodash.js"}],
 
 "/tmp/config/config-validator.js": [function(require,module,exports){
 "use strict";
@@ -23354,7 +23465,7 @@ function validateRuleOptions(id, options, source) {
         localOptions = [];
     }
 
-    // validSeverity = (severity === 0 || severity === 1 || severity === 2);
+    validSeverity = (severity === 0 || severity === 1 || severity === 2);
 
     if (validateRule) {
         validateRule(localOptions);
@@ -23478,11 +23589,11 @@ module.exports = {
 "/tmp/eslint.js": [function(require,module,exports){
 "use strict";
 
-var estraverse = require("./util/estraverse"),
+var lodash = require("lodash"),
+    estraverse = require("./util/estraverse"),
     escope = require("escope"),
     Environments = require("./config/environments"),
     blankScriptAST = require("../conf/blank-script.json"),
-    assign = require("object-assign"),
     rules = require("./rules"),
     RuleContext = require("./rule-context"),
     timing = require("./timing"),
@@ -23563,21 +23674,21 @@ function addDeclaredGlobals(program, globalScope, config) {
         explicitGlobals = {},
         builtin = Environments.get("builtin");
 
-    assign(declaredGlobals, builtin);
+    lodash.assign(declaredGlobals, builtin);
 
     Object.keys(config.env).forEach(function(name) {
         if (config.env[name]) {
             var env = Environments.get(name),
                 environmentGlobals = env && env.globals;
             if (environmentGlobals) {
-                assign(declaredGlobals, environmentGlobals);
+                lodash.assign(declaredGlobals, environmentGlobals);
             }
         }
     });
 
-    assign(exportedGlobals, config.exported);
-    assign(declaredGlobals, config.globals);
-    assign(explicitGlobals, config.astGlobals);
+    lodash.assign(exportedGlobals, config.exported);
+    lodash.assign(declaredGlobals, config.globals);
+    lodash.assign(explicitGlobals, config.astGlobals);
 
     Object.keys(declaredGlobals).forEach(function(name) {
         var variable = globalScope.set.get(name);
@@ -23680,7 +23791,7 @@ function modifyConfigsFromComments(filename, ast, config, reportingConfig, messa
     ast.comments.forEach(function(comment) {
 
         var value = comment.value.trim();
-        var match = /^(eslint-\w+|eslint-\w+-\w+|eslint|exported|globals?)(\s|$)/.exec(value);
+        var match = /^(eslint(-\w+){0,3}|exported|globals?)(\s|$)/.exec(value);
 
         if (match) {
             value = value.substring(match.index + match[1].length);
@@ -23688,16 +23799,16 @@ function modifyConfigsFromComments(filename, ast, config, reportingConfig, messa
             if (comment.type === "Block") {
                 switch (match[1]) {
                     case "exported":
-                        assign(commentConfig.exported, parseBooleanConfig(value, comment));
+                        lodash.assign(commentConfig.exported, parseBooleanConfig(value, comment));
                         break;
 
                     case "globals":
                     case "global":
-                        assign(commentConfig.astGlobals, parseBooleanConfig(value, comment));
+                        lodash.assign(commentConfig.astGlobals, parseBooleanConfig(value, comment));
                         break;
 
                     case "eslint-env":
-                        assign(commentConfig.env, parseListConfig(value));
+                        lodash.assign(commentConfig.env, parseListConfig(value));
                         break;
 
                     case "eslint-disable":
@@ -23722,6 +23833,9 @@ function modifyConfigsFromComments(filename, ast, config, reportingConfig, messa
                 if (match[1] === "eslint-disable-line") {
                     disableReporting(reportingConfig, { "line": comment.loc.start.line, "column": 0 }, Object.keys(parseListConfig(value)));
                     enableReporting(reportingConfig, comment.loc.end, Object.keys(parseListConfig(value)));
+                } else if (match[1] === "eslint-disable-next-line") {
+                    disableReporting(reportingConfig, comment.loc.start, Object.keys(parseListConfig(value)));
+                    enableReporting(reportingConfig, { "line": comment.loc.start.line + 2 }, Object.keys(parseListConfig(value)));
                 }
             }
         }
@@ -23733,7 +23847,7 @@ function modifyConfigsFromComments(filename, ast, config, reportingConfig, messa
             commentConfig = ConfigOps.merge(commentConfig, env);
         }
     });
-    assign(commentConfig.rules, commentRules);
+    lodash.assign(commentConfig.rules, commentRules);
 
     return ConfigOps.merge(config, commentConfig);
 }
@@ -23841,7 +23955,7 @@ function findEslintEnv(text) {
 
     eslintEnvPattern.lastIndex = 0;
     while ((match = eslintEnvPattern.exec(text))) {
-        retv = assign(retv || {}, parseListConfig(match[1]));
+        retv = lodash.assign(retv || {}, parseListConfig(match[1]));
     }
 
     return retv;
@@ -23896,7 +24010,7 @@ module.exports = (function() {
         }
 
         if (config.parserOptions) {
-            parserOptions = assign({}, config.parserOptions, parserOptions);
+            parserOptions = lodash.assign({}, config.parserOptions, parserOptions);
         }
 
         try {
@@ -23904,7 +24018,7 @@ module.exports = (function() {
         } catch (ex) {
 
             var message = ex.message.replace(/^line \d+:/i, "").trim();
-            var source = (ex.lineNumber) ? SourceCode.splitLines(text)[ex.lineNumber] : null;
+            var source = (ex.lineNumber) ? SourceCode.splitLines(text)[ex.lineNumber - 1] : null;
 
             messages.push({
                 ruleId: null,
@@ -23977,10 +24091,10 @@ module.exports = (function() {
         var envInFile = findEslintEnv(text || textOrSourceCode.text);
         if (envInFile) {
             if (!config || !config.env) {
-                config = assign({}, config || {}, {env: envInFile});
+                config = lodash.assign({}, config || {}, {env: envInFile});
             } else {
-                config = assign({}, config);
-                config.env = assign({}, config.env, envInFile);
+                config = lodash.assign({}, config);
+                config.env = lodash.assign({}, config.env, envInFile);
             }
         }
 
@@ -24153,7 +24267,7 @@ module.exports = (function() {
             line: location.line,
             column: location.column + 1,   // switch to 1-base instead of 0-base
             nodeType: node && node.type,
-            source: sourceCode.lines[location.line] || ""
+            source: sourceCode.lines[location.line - 1] || ""
         };
 
         if (fix && Array.isArray(fix.range) && (typeof fix.text === "string") && (!meta || !meta.docs || meta.docs.fixable)) {
@@ -24293,11 +24407,12 @@ module.exports = (function() {
 }());
 
 },
-   {"../conf/blank-script.json":"/conf/blank-script.json","../conf/eslint.json":"/conf/eslint.json","../conf/replacements.json":"/conf/replacements.json","./code-path-analysis/code-path-analyzer":"/tmp/code-path-analysis/code-path-analyzer.js","./config/config-ops":"/tmp/config/config-ops.js","./config/config-validator":"/tmp/config/config-validator.js","./config/environments":"/tmp/config/environments.js","./rule-context":"/tmp/rule-context.js","./rules":"/tmp/rules.js","./timing":"/tmp/timing.js","./util/comment-event-generator":"/tmp/util/comment-event-generator.js","./util/estraverse":"/tmp/util/estraverse.js","./util/node-event-generator":"/tmp/util/node-event-generator.js","./util/source-code":"/tmp/util/source-code.js","assert":"/node_modules/browserify/node_modules/assert/assert.js","escope":"/node_modules/escope/lib/index.js","events":"/node_modules/browserify/node_modules/events/events.js","object-assign":"/node_modules/object-assign/index.js"}],
+   {"../conf/blank-script.json":"/conf/blank-script.json","../conf/eslint.json":"/conf/eslint.json","../conf/replacements.json":"/conf/replacements.json","./code-path-analysis/code-path-analyzer":"/tmp/code-path-analysis/code-path-analyzer.js","./config/config-ops":"/tmp/config/config-ops.js","./config/config-validator":"/tmp/config/config-validator.js","./config/environments":"/tmp/config/environments.js","./rule-context":"/tmp/rule-context.js","./rules":"/tmp/rules.js","./timing":"/tmp/timing.js","./util/comment-event-generator":"/tmp/util/comment-event-generator.js","./util/estraverse":"/tmp/util/estraverse.js","./util/node-event-generator":"/tmp/util/node-event-generator.js","./util/source-code":"/tmp/util/source-code.js","assert":"/node_modules/browserify/node_modules/assert/assert.js","escope":"/node_modules/escope/lib/index.js","events":"/node_modules/browserify/node_modules/events/events.js","lodash":"/node_modules/lodash/lodash.js"}],
 
 "/tmp/load-rules.js": [function(require,module,exports){
 module.exports = function() {
-    var rules = require('eslint-plugin-react').rules
+    var rules = require('eslint-plugin-react').rules;
+    Object.keys(rules).forEach(function(k) {rules['react/' + k] = rules[k]; });
     rules["accessor-pairs"] = require("./rules/accessor-pairs");
     rules["array-bracket-spacing"] = require("./rules/array-bracket-spacing");
     rules["array-callback-return"] = require("./rules/array-callback-return");
@@ -24371,6 +24486,7 @@ module.exports = function() {
     rules["no-duplicate-case"] = require("./rules/no-duplicate-case");
     rules["no-else-return"] = require("./rules/no-else-return");
     rules["no-empty-character-class"] = require("./rules/no-empty-character-class");
+    rules["no-empty-function"] = require("./rules/no-empty-function");
     rules["no-empty-pattern"] = require("./rules/no-empty-pattern");
     rules["no-empty"] = require("./rules/no-empty");
     rules["no-eq-null"] = require("./rules/no-eq-null");
@@ -24505,7 +24621,7 @@ module.exports = function() {
     return rules;
 };
 },
-   {"./rules/accessor-pairs":"/tmp/rules/accessor-pairs.js","./rules/array-bracket-spacing":"/tmp/rules/array-bracket-spacing.js","./rules/array-callback-return":"/tmp/rules/array-callback-return.js","./rules/arrow-body-style":"/tmp/rules/arrow-body-style.js","./rules/arrow-parens":"/tmp/rules/arrow-parens.js","./rules/arrow-spacing":"/tmp/rules/arrow-spacing.js","./rules/block-scoped-var":"/tmp/rules/block-scoped-var.js","./rules/block-spacing":"/tmp/rules/block-spacing.js","./rules/brace-style":"/tmp/rules/brace-style.js","./rules/callback-return":"/tmp/rules/callback-return.js","./rules/camelcase":"/tmp/rules/camelcase.js","./rules/comma-dangle":"/tmp/rules/comma-dangle.js","./rules/comma-spacing":"/tmp/rules/comma-spacing.js","./rules/comma-style":"/tmp/rules/comma-style.js","./rules/complexity":"/tmp/rules/complexity.js","./rules/computed-property-spacing":"/tmp/rules/computed-property-spacing.js","./rules/consistent-return":"/tmp/rules/consistent-return.js","./rules/consistent-this":"/tmp/rules/consistent-this.js","./rules/constructor-super":"/tmp/rules/constructor-super.js","./rules/curly":"/tmp/rules/curly.js","./rules/default-case":"/tmp/rules/default-case.js","./rules/dot-location":"/tmp/rules/dot-location.js","./rules/dot-notation":"/tmp/rules/dot-notation.js","./rules/eol-last":"/tmp/rules/eol-last.js","./rules/eqeqeq":"/tmp/rules/eqeqeq.js","./rules/func-names":"/tmp/rules/func-names.js","./rules/func-style":"/tmp/rules/func-style.js","./rules/generator-star-spacing":"/tmp/rules/generator-star-spacing.js","./rules/global-require":"/tmp/rules/global-require.js","./rules/guard-for-in":"/tmp/rules/guard-for-in.js","./rules/handle-callback-err":"/tmp/rules/handle-callback-err.js","./rules/id-blacklist":"/tmp/rules/id-blacklist.js","./rules/id-length":"/tmp/rules/id-length.js","./rules/id-match":"/tmp/rules/id-match.js","./rules/indent":"/tmp/rules/indent.js","./rules/init-declarations":"/tmp/rules/init-declarations.js","./rules/jsx-quotes":"/tmp/rules/jsx-quotes.js","./rules/key-spacing":"/tmp/rules/key-spacing.js","./rules/keyword-spacing":"/tmp/rules/keyword-spacing.js","./rules/linebreak-style":"/tmp/rules/linebreak-style.js","./rules/lines-around-comment":"/tmp/rules/lines-around-comment.js","./rules/max-depth":"/tmp/rules/max-depth.js","./rules/max-len":"/tmp/rules/max-len.js","./rules/max-nested-callbacks":"/tmp/rules/max-nested-callbacks.js","./rules/max-params":"/tmp/rules/max-params.js","./rules/max-statements":"/tmp/rules/max-statements.js","./rules/new-cap":"/tmp/rules/new-cap.js","./rules/new-parens":"/tmp/rules/new-parens.js","./rules/newline-after-var":"/tmp/rules/newline-after-var.js","./rules/newline-per-chained-call":"/tmp/rules/newline-per-chained-call.js","./rules/no-alert":"/tmp/rules/no-alert.js","./rules/no-array-constructor":"/tmp/rules/no-array-constructor.js","./rules/no-bitwise":"/tmp/rules/no-bitwise.js","./rules/no-caller":"/tmp/rules/no-caller.js","./rules/no-case-declarations":"/tmp/rules/no-case-declarations.js","./rules/no-catch-shadow":"/tmp/rules/no-catch-shadow.js","./rules/no-class-assign":"/tmp/rules/no-class-assign.js","./rules/no-cond-assign":"/tmp/rules/no-cond-assign.js","./rules/no-confusing-arrow":"/tmp/rules/no-confusing-arrow.js","./rules/no-console":"/tmp/rules/no-console.js","./rules/no-const-assign":"/tmp/rules/no-const-assign.js","./rules/no-constant-condition":"/tmp/rules/no-constant-condition.js","./rules/no-continue":"/tmp/rules/no-continue.js","./rules/no-control-regex":"/tmp/rules/no-control-regex.js","./rules/no-debugger":"/tmp/rules/no-debugger.js","./rules/no-delete-var":"/tmp/rules/no-delete-var.js","./rules/no-div-regex":"/tmp/rules/no-div-regex.js","./rules/no-dupe-args":"/tmp/rules/no-dupe-args.js","./rules/no-dupe-class-members":"/tmp/rules/no-dupe-class-members.js","./rules/no-dupe-keys":"/tmp/rules/no-dupe-keys.js","./rules/no-duplicate-case":"/tmp/rules/no-duplicate-case.js","./rules/no-else-return":"/tmp/rules/no-else-return.js","./rules/no-empty":"/tmp/rules/no-empty.js","./rules/no-empty-character-class":"/tmp/rules/no-empty-character-class.js","./rules/no-empty-pattern":"/tmp/rules/no-empty-pattern.js","./rules/no-eq-null":"/tmp/rules/no-eq-null.js","./rules/no-eval":"/tmp/rules/no-eval.js","./rules/no-ex-assign":"/tmp/rules/no-ex-assign.js","./rules/no-extend-native":"/tmp/rules/no-extend-native.js","./rules/no-extra-bind":"/tmp/rules/no-extra-bind.js","./rules/no-extra-boolean-cast":"/tmp/rules/no-extra-boolean-cast.js","./rules/no-extra-label":"/tmp/rules/no-extra-label.js","./rules/no-extra-parens":"/tmp/rules/no-extra-parens.js","./rules/no-extra-semi":"/tmp/rules/no-extra-semi.js","./rules/no-fallthrough":"/tmp/rules/no-fallthrough.js","./rules/no-floating-decimal":"/tmp/rules/no-floating-decimal.js","./rules/no-func-assign":"/tmp/rules/no-func-assign.js","./rules/no-implicit-coercion":"/tmp/rules/no-implicit-coercion.js","./rules/no-implicit-globals":"/tmp/rules/no-implicit-globals.js","./rules/no-implied-eval":"/tmp/rules/no-implied-eval.js","./rules/no-inline-comments":"/tmp/rules/no-inline-comments.js","./rules/no-inner-declarations":"/tmp/rules/no-inner-declarations.js","./rules/no-invalid-regexp":"/tmp/rules/no-invalid-regexp.js","./rules/no-invalid-this":"/tmp/rules/no-invalid-this.js","./rules/no-irregular-whitespace":"/tmp/rules/no-irregular-whitespace.js","./rules/no-iterator":"/tmp/rules/no-iterator.js","./rules/no-label-var":"/tmp/rules/no-label-var.js","./rules/no-labels":"/tmp/rules/no-labels.js","./rules/no-lone-blocks":"/tmp/rules/no-lone-blocks.js","./rules/no-lonely-if":"/tmp/rules/no-lonely-if.js","./rules/no-loop-func":"/tmp/rules/no-loop-func.js","./rules/no-magic-numbers":"/tmp/rules/no-magic-numbers.js","./rules/no-mixed-requires":"/tmp/rules/no-mixed-requires.js","./rules/no-mixed-spaces-and-tabs":"/tmp/rules/no-mixed-spaces-and-tabs.js","./rules/no-multi-spaces":"/tmp/rules/no-multi-spaces.js","./rules/no-multi-str":"/tmp/rules/no-multi-str.js","./rules/no-multiple-empty-lines":"/tmp/rules/no-multiple-empty-lines.js","./rules/no-native-reassign":"/tmp/rules/no-native-reassign.js","./rules/no-negated-condition":"/tmp/rules/no-negated-condition.js","./rules/no-negated-in-lhs":"/tmp/rules/no-negated-in-lhs.js","./rules/no-nested-ternary":"/tmp/rules/no-nested-ternary.js","./rules/no-new":"/tmp/rules/no-new.js","./rules/no-new-func":"/tmp/rules/no-new-func.js","./rules/no-new-object":"/tmp/rules/no-new-object.js","./rules/no-new-require":"/tmp/rules/no-new-require.js","./rules/no-new-symbol":"/tmp/rules/no-new-symbol.js","./rules/no-new-wrappers":"/tmp/rules/no-new-wrappers.js","./rules/no-obj-calls":"/tmp/rules/no-obj-calls.js","./rules/no-octal":"/tmp/rules/no-octal.js","./rules/no-octal-escape":"/tmp/rules/no-octal-escape.js","./rules/no-param-reassign":"/tmp/rules/no-param-reassign.js","./rules/no-path-concat":"/tmp/rules/no-path-concat.js","./rules/no-plusplus":"/tmp/rules/no-plusplus.js","./rules/no-process-env":"/tmp/rules/no-process-env.js","./rules/no-process-exit":"/tmp/rules/no-process-exit.js","./rules/no-proto":"/tmp/rules/no-proto.js","./rules/no-redeclare":"/tmp/rules/no-redeclare.js","./rules/no-regex-spaces":"/tmp/rules/no-regex-spaces.js","./rules/no-restricted-imports":"/tmp/rules/no-restricted-imports.js","./rules/no-restricted-modules":"/tmp/rules/no-restricted-modules.js","./rules/no-restricted-syntax":"/tmp/rules/no-restricted-syntax.js","./rules/no-return-assign":"/tmp/rules/no-return-assign.js","./rules/no-script-url":"/tmp/rules/no-script-url.js","./rules/no-self-assign":"/tmp/rules/no-self-assign.js","./rules/no-self-compare":"/tmp/rules/no-self-compare.js","./rules/no-sequences":"/tmp/rules/no-sequences.js","./rules/no-shadow":"/tmp/rules/no-shadow.js","./rules/no-shadow-restricted-names":"/tmp/rules/no-shadow-restricted-names.js","./rules/no-spaced-func":"/tmp/rules/no-spaced-func.js","./rules/no-sparse-arrays":"/tmp/rules/no-sparse-arrays.js","./rules/no-sync":"/tmp/rules/no-sync.js","./rules/no-ternary":"/tmp/rules/no-ternary.js","./rules/no-this-before-super":"/tmp/rules/no-this-before-super.js","./rules/no-throw-literal":"/tmp/rules/no-throw-literal.js","./rules/no-trailing-spaces":"/tmp/rules/no-trailing-spaces.js","./rules/no-undef":"/tmp/rules/no-undef.js","./rules/no-undef-init":"/tmp/rules/no-undef-init.js","./rules/no-undefined":"/tmp/rules/no-undefined.js","./rules/no-underscore-dangle":"/tmp/rules/no-underscore-dangle.js","./rules/no-unexpected-multiline":"/tmp/rules/no-unexpected-multiline.js","./rules/no-unmodified-loop-condition":"/tmp/rules/no-unmodified-loop-condition.js","./rules/no-unneeded-ternary":"/tmp/rules/no-unneeded-ternary.js","./rules/no-unreachable":"/tmp/rules/no-unreachable.js","./rules/no-unused-expressions":"/tmp/rules/no-unused-expressions.js","./rules/no-unused-labels":"/tmp/rules/no-unused-labels.js","./rules/no-unused-vars":"/tmp/rules/no-unused-vars.js","./rules/no-use-before-define":"/tmp/rules/no-use-before-define.js","./rules/no-useless-call":"/tmp/rules/no-useless-call.js","./rules/no-useless-concat":"/tmp/rules/no-useless-concat.js","./rules/no-useless-constructor":"/tmp/rules/no-useless-constructor.js","./rules/no-var":"/tmp/rules/no-var.js","./rules/no-void":"/tmp/rules/no-void.js","./rules/no-warning-comments":"/tmp/rules/no-warning-comments.js","./rules/no-whitespace-before-property":"/tmp/rules/no-whitespace-before-property.js","./rules/no-with":"/tmp/rules/no-with.js","./rules/object-curly-spacing":"/tmp/rules/object-curly-spacing.js","./rules/object-shorthand":"/tmp/rules/object-shorthand.js","./rules/one-var":"/tmp/rules/one-var.js","./rules/one-var-declaration-per-line":"/tmp/rules/one-var-declaration-per-line.js","./rules/operator-assignment":"/tmp/rules/operator-assignment.js","./rules/operator-linebreak":"/tmp/rules/operator-linebreak.js","./rules/padded-blocks":"/tmp/rules/padded-blocks.js","./rules/prefer-arrow-callback":"/tmp/rules/prefer-arrow-callback.js","./rules/prefer-const":"/tmp/rules/prefer-const.js","./rules/prefer-reflect":"/tmp/rules/prefer-reflect.js","./rules/prefer-rest-params":"/tmp/rules/prefer-rest-params.js","./rules/prefer-spread":"/tmp/rules/prefer-spread.js","./rules/prefer-template":"/tmp/rules/prefer-template.js","./rules/quote-props":"/tmp/rules/quote-props.js","./rules/quotes":"/tmp/rules/quotes.js","./rules/radix":"/tmp/rules/radix.js","./rules/require-jsdoc":"/tmp/rules/require-jsdoc.js","./rules/require-yield":"/tmp/rules/require-yield.js","./rules/semi":"/tmp/rules/semi.js","./rules/semi-spacing":"/tmp/rules/semi-spacing.js","./rules/sort-imports":"/tmp/rules/sort-imports.js","./rules/sort-vars":"/tmp/rules/sort-vars.js","./rules/space-before-blocks":"/tmp/rules/space-before-blocks.js","./rules/space-before-function-paren":"/tmp/rules/space-before-function-paren.js","./rules/space-in-parens":"/tmp/rules/space-in-parens.js","./rules/space-infix-ops":"/tmp/rules/space-infix-ops.js","./rules/space-unary-ops":"/tmp/rules/space-unary-ops.js","./rules/spaced-comment":"/tmp/rules/spaced-comment.js","./rules/strict":"/tmp/rules/strict.js","./rules/template-curly-spacing":"/tmp/rules/template-curly-spacing.js","./rules/use-isnan":"/tmp/rules/use-isnan.js","./rules/valid-jsdoc":"/tmp/rules/valid-jsdoc.js","./rules/valid-typeof":"/tmp/rules/valid-typeof.js","./rules/vars-on-top":"/tmp/rules/vars-on-top.js","./rules/wrap-iife":"/tmp/rules/wrap-iife.js","./rules/wrap-regex":"/tmp/rules/wrap-regex.js","./rules/yield-star-spacing":"/tmp/rules/yield-star-spacing.js","./rules/yoda":"/tmp/rules/yoda.js","eslint-plugin-react":"/node_modules/eslint-plugin-react/index.js"}],
+   {"./rules/accessor-pairs":"/tmp/rules/accessor-pairs.js","./rules/array-bracket-spacing":"/tmp/rules/array-bracket-spacing.js","./rules/array-callback-return":"/tmp/rules/array-callback-return.js","./rules/arrow-body-style":"/tmp/rules/arrow-body-style.js","./rules/arrow-parens":"/tmp/rules/arrow-parens.js","./rules/arrow-spacing":"/tmp/rules/arrow-spacing.js","./rules/block-scoped-var":"/tmp/rules/block-scoped-var.js","./rules/block-spacing":"/tmp/rules/block-spacing.js","./rules/brace-style":"/tmp/rules/brace-style.js","./rules/callback-return":"/tmp/rules/callback-return.js","./rules/camelcase":"/tmp/rules/camelcase.js","./rules/comma-dangle":"/tmp/rules/comma-dangle.js","./rules/comma-spacing":"/tmp/rules/comma-spacing.js","./rules/comma-style":"/tmp/rules/comma-style.js","./rules/complexity":"/tmp/rules/complexity.js","./rules/computed-property-spacing":"/tmp/rules/computed-property-spacing.js","./rules/consistent-return":"/tmp/rules/consistent-return.js","./rules/consistent-this":"/tmp/rules/consistent-this.js","./rules/constructor-super":"/tmp/rules/constructor-super.js","./rules/curly":"/tmp/rules/curly.js","./rules/default-case":"/tmp/rules/default-case.js","./rules/dot-location":"/tmp/rules/dot-location.js","./rules/dot-notation":"/tmp/rules/dot-notation.js","./rules/eol-last":"/tmp/rules/eol-last.js","./rules/eqeqeq":"/tmp/rules/eqeqeq.js","./rules/func-names":"/tmp/rules/func-names.js","./rules/func-style":"/tmp/rules/func-style.js","./rules/generator-star-spacing":"/tmp/rules/generator-star-spacing.js","./rules/global-require":"/tmp/rules/global-require.js","./rules/guard-for-in":"/tmp/rules/guard-for-in.js","./rules/handle-callback-err":"/tmp/rules/handle-callback-err.js","./rules/id-blacklist":"/tmp/rules/id-blacklist.js","./rules/id-length":"/tmp/rules/id-length.js","./rules/id-match":"/tmp/rules/id-match.js","./rules/indent":"/tmp/rules/indent.js","./rules/init-declarations":"/tmp/rules/init-declarations.js","./rules/jsx-quotes":"/tmp/rules/jsx-quotes.js","./rules/key-spacing":"/tmp/rules/key-spacing.js","./rules/keyword-spacing":"/tmp/rules/keyword-spacing.js","./rules/linebreak-style":"/tmp/rules/linebreak-style.js","./rules/lines-around-comment":"/tmp/rules/lines-around-comment.js","./rules/max-depth":"/tmp/rules/max-depth.js","./rules/max-len":"/tmp/rules/max-len.js","./rules/max-nested-callbacks":"/tmp/rules/max-nested-callbacks.js","./rules/max-params":"/tmp/rules/max-params.js","./rules/max-statements":"/tmp/rules/max-statements.js","./rules/new-cap":"/tmp/rules/new-cap.js","./rules/new-parens":"/tmp/rules/new-parens.js","./rules/newline-after-var":"/tmp/rules/newline-after-var.js","./rules/newline-per-chained-call":"/tmp/rules/newline-per-chained-call.js","./rules/no-alert":"/tmp/rules/no-alert.js","./rules/no-array-constructor":"/tmp/rules/no-array-constructor.js","./rules/no-bitwise":"/tmp/rules/no-bitwise.js","./rules/no-caller":"/tmp/rules/no-caller.js","./rules/no-case-declarations":"/tmp/rules/no-case-declarations.js","./rules/no-catch-shadow":"/tmp/rules/no-catch-shadow.js","./rules/no-class-assign":"/tmp/rules/no-class-assign.js","./rules/no-cond-assign":"/tmp/rules/no-cond-assign.js","./rules/no-confusing-arrow":"/tmp/rules/no-confusing-arrow.js","./rules/no-console":"/tmp/rules/no-console.js","./rules/no-const-assign":"/tmp/rules/no-const-assign.js","./rules/no-constant-condition":"/tmp/rules/no-constant-condition.js","./rules/no-continue":"/tmp/rules/no-continue.js","./rules/no-control-regex":"/tmp/rules/no-control-regex.js","./rules/no-debugger":"/tmp/rules/no-debugger.js","./rules/no-delete-var":"/tmp/rules/no-delete-var.js","./rules/no-div-regex":"/tmp/rules/no-div-regex.js","./rules/no-dupe-args":"/tmp/rules/no-dupe-args.js","./rules/no-dupe-class-members":"/tmp/rules/no-dupe-class-members.js","./rules/no-dupe-keys":"/tmp/rules/no-dupe-keys.js","./rules/no-duplicate-case":"/tmp/rules/no-duplicate-case.js","./rules/no-else-return":"/tmp/rules/no-else-return.js","./rules/no-empty":"/tmp/rules/no-empty.js","./rules/no-empty-character-class":"/tmp/rules/no-empty-character-class.js","./rules/no-empty-function":"/tmp/rules/no-empty-function.js","./rules/no-empty-pattern":"/tmp/rules/no-empty-pattern.js","./rules/no-eq-null":"/tmp/rules/no-eq-null.js","./rules/no-eval":"/tmp/rules/no-eval.js","./rules/no-ex-assign":"/tmp/rules/no-ex-assign.js","./rules/no-extend-native":"/tmp/rules/no-extend-native.js","./rules/no-extra-bind":"/tmp/rules/no-extra-bind.js","./rules/no-extra-boolean-cast":"/tmp/rules/no-extra-boolean-cast.js","./rules/no-extra-label":"/tmp/rules/no-extra-label.js","./rules/no-extra-parens":"/tmp/rules/no-extra-parens.js","./rules/no-extra-semi":"/tmp/rules/no-extra-semi.js","./rules/no-fallthrough":"/tmp/rules/no-fallthrough.js","./rules/no-floating-decimal":"/tmp/rules/no-floating-decimal.js","./rules/no-func-assign":"/tmp/rules/no-func-assign.js","./rules/no-implicit-coercion":"/tmp/rules/no-implicit-coercion.js","./rules/no-implicit-globals":"/tmp/rules/no-implicit-globals.js","./rules/no-implied-eval":"/tmp/rules/no-implied-eval.js","./rules/no-inline-comments":"/tmp/rules/no-inline-comments.js","./rules/no-inner-declarations":"/tmp/rules/no-inner-declarations.js","./rules/no-invalid-regexp":"/tmp/rules/no-invalid-regexp.js","./rules/no-invalid-this":"/tmp/rules/no-invalid-this.js","./rules/no-irregular-whitespace":"/tmp/rules/no-irregular-whitespace.js","./rules/no-iterator":"/tmp/rules/no-iterator.js","./rules/no-label-var":"/tmp/rules/no-label-var.js","./rules/no-labels":"/tmp/rules/no-labels.js","./rules/no-lone-blocks":"/tmp/rules/no-lone-blocks.js","./rules/no-lonely-if":"/tmp/rules/no-lonely-if.js","./rules/no-loop-func":"/tmp/rules/no-loop-func.js","./rules/no-magic-numbers":"/tmp/rules/no-magic-numbers.js","./rules/no-mixed-requires":"/tmp/rules/no-mixed-requires.js","./rules/no-mixed-spaces-and-tabs":"/tmp/rules/no-mixed-spaces-and-tabs.js","./rules/no-multi-spaces":"/tmp/rules/no-multi-spaces.js","./rules/no-multi-str":"/tmp/rules/no-multi-str.js","./rules/no-multiple-empty-lines":"/tmp/rules/no-multiple-empty-lines.js","./rules/no-native-reassign":"/tmp/rules/no-native-reassign.js","./rules/no-negated-condition":"/tmp/rules/no-negated-condition.js","./rules/no-negated-in-lhs":"/tmp/rules/no-negated-in-lhs.js","./rules/no-nested-ternary":"/tmp/rules/no-nested-ternary.js","./rules/no-new":"/tmp/rules/no-new.js","./rules/no-new-func":"/tmp/rules/no-new-func.js","./rules/no-new-object":"/tmp/rules/no-new-object.js","./rules/no-new-require":"/tmp/rules/no-new-require.js","./rules/no-new-symbol":"/tmp/rules/no-new-symbol.js","./rules/no-new-wrappers":"/tmp/rules/no-new-wrappers.js","./rules/no-obj-calls":"/tmp/rules/no-obj-calls.js","./rules/no-octal":"/tmp/rules/no-octal.js","./rules/no-octal-escape":"/tmp/rules/no-octal-escape.js","./rules/no-param-reassign":"/tmp/rules/no-param-reassign.js","./rules/no-path-concat":"/tmp/rules/no-path-concat.js","./rules/no-plusplus":"/tmp/rules/no-plusplus.js","./rules/no-process-env":"/tmp/rules/no-process-env.js","./rules/no-process-exit":"/tmp/rules/no-process-exit.js","./rules/no-proto":"/tmp/rules/no-proto.js","./rules/no-redeclare":"/tmp/rules/no-redeclare.js","./rules/no-regex-spaces":"/tmp/rules/no-regex-spaces.js","./rules/no-restricted-imports":"/tmp/rules/no-restricted-imports.js","./rules/no-restricted-modules":"/tmp/rules/no-restricted-modules.js","./rules/no-restricted-syntax":"/tmp/rules/no-restricted-syntax.js","./rules/no-return-assign":"/tmp/rules/no-return-assign.js","./rules/no-script-url":"/tmp/rules/no-script-url.js","./rules/no-self-assign":"/tmp/rules/no-self-assign.js","./rules/no-self-compare":"/tmp/rules/no-self-compare.js","./rules/no-sequences":"/tmp/rules/no-sequences.js","./rules/no-shadow":"/tmp/rules/no-shadow.js","./rules/no-shadow-restricted-names":"/tmp/rules/no-shadow-restricted-names.js","./rules/no-spaced-func":"/tmp/rules/no-spaced-func.js","./rules/no-sparse-arrays":"/tmp/rules/no-sparse-arrays.js","./rules/no-sync":"/tmp/rules/no-sync.js","./rules/no-ternary":"/tmp/rules/no-ternary.js","./rules/no-this-before-super":"/tmp/rules/no-this-before-super.js","./rules/no-throw-literal":"/tmp/rules/no-throw-literal.js","./rules/no-trailing-spaces":"/tmp/rules/no-trailing-spaces.js","./rules/no-undef":"/tmp/rules/no-undef.js","./rules/no-undef-init":"/tmp/rules/no-undef-init.js","./rules/no-undefined":"/tmp/rules/no-undefined.js","./rules/no-underscore-dangle":"/tmp/rules/no-underscore-dangle.js","./rules/no-unexpected-multiline":"/tmp/rules/no-unexpected-multiline.js","./rules/no-unmodified-loop-condition":"/tmp/rules/no-unmodified-loop-condition.js","./rules/no-unneeded-ternary":"/tmp/rules/no-unneeded-ternary.js","./rules/no-unreachable":"/tmp/rules/no-unreachable.js","./rules/no-unused-expressions":"/tmp/rules/no-unused-expressions.js","./rules/no-unused-labels":"/tmp/rules/no-unused-labels.js","./rules/no-unused-vars":"/tmp/rules/no-unused-vars.js","./rules/no-use-before-define":"/tmp/rules/no-use-before-define.js","./rules/no-useless-call":"/tmp/rules/no-useless-call.js","./rules/no-useless-concat":"/tmp/rules/no-useless-concat.js","./rules/no-useless-constructor":"/tmp/rules/no-useless-constructor.js","./rules/no-var":"/tmp/rules/no-var.js","./rules/no-void":"/tmp/rules/no-void.js","./rules/no-warning-comments":"/tmp/rules/no-warning-comments.js","./rules/no-whitespace-before-property":"/tmp/rules/no-whitespace-before-property.js","./rules/no-with":"/tmp/rules/no-with.js","./rules/object-curly-spacing":"/tmp/rules/object-curly-spacing.js","./rules/object-shorthand":"/tmp/rules/object-shorthand.js","./rules/one-var":"/tmp/rules/one-var.js","./rules/one-var-declaration-per-line":"/tmp/rules/one-var-declaration-per-line.js","./rules/operator-assignment":"/tmp/rules/operator-assignment.js","./rules/operator-linebreak":"/tmp/rules/operator-linebreak.js","./rules/padded-blocks":"/tmp/rules/padded-blocks.js","./rules/prefer-arrow-callback":"/tmp/rules/prefer-arrow-callback.js","./rules/prefer-const":"/tmp/rules/prefer-const.js","./rules/prefer-reflect":"/tmp/rules/prefer-reflect.js","./rules/prefer-rest-params":"/tmp/rules/prefer-rest-params.js","./rules/prefer-spread":"/tmp/rules/prefer-spread.js","./rules/prefer-template":"/tmp/rules/prefer-template.js","./rules/quote-props":"/tmp/rules/quote-props.js","./rules/quotes":"/tmp/rules/quotes.js","./rules/radix":"/tmp/rules/radix.js","./rules/require-jsdoc":"/tmp/rules/require-jsdoc.js","./rules/require-yield":"/tmp/rules/require-yield.js","./rules/semi":"/tmp/rules/semi.js","./rules/semi-spacing":"/tmp/rules/semi-spacing.js","./rules/sort-imports":"/tmp/rules/sort-imports.js","./rules/sort-vars":"/tmp/rules/sort-vars.js","./rules/space-before-blocks":"/tmp/rules/space-before-blocks.js","./rules/space-before-function-paren":"/tmp/rules/space-before-function-paren.js","./rules/space-in-parens":"/tmp/rules/space-in-parens.js","./rules/space-infix-ops":"/tmp/rules/space-infix-ops.js","./rules/space-unary-ops":"/tmp/rules/space-unary-ops.js","./rules/spaced-comment":"/tmp/rules/spaced-comment.js","./rules/strict":"/tmp/rules/strict.js","./rules/template-curly-spacing":"/tmp/rules/template-curly-spacing.js","./rules/use-isnan":"/tmp/rules/use-isnan.js","./rules/valid-jsdoc":"/tmp/rules/valid-jsdoc.js","./rules/valid-typeof":"/tmp/rules/valid-typeof.js","./rules/vars-on-top":"/tmp/rules/vars-on-top.js","./rules/wrap-iife":"/tmp/rules/wrap-iife.js","./rules/wrap-regex":"/tmp/rules/wrap-regex.js","./rules/yield-star-spacing":"/tmp/rules/yield-star-spacing.js","./rules/yoda":"/tmp/rules/yoda.js","eslint-plugin-react":"/node_modules/eslint-plugin-react/index.js"}],
 
 "/tmp/rule-context.js": [function(require,module,exports){
 "use strict";
@@ -26605,27 +26721,28 @@ module.exports = function(context) {
 
     return {
         "onCodePathStart": function(codePath, node) {
-            if (!isConstructorFunction(node)) {
-                return;
+            if (isConstructorFunction(node)) {
+                var classNode = node.parent.parent.parent;
+                funcInfo = {
+                    upper: funcInfo,
+                    isConstructor: true,
+                    hasExtends: Boolean(
+                        classNode.superClass &&
+                        !astUtils.isNullOrUndefined(classNode.superClass)
+                    ),
+                    codePath: codePath
+                };
+            } else {
+                funcInfo = {
+                    upper: funcInfo,
+                    isConstructor: false,
+                    hasExtends: false,
+                    codePath: codePath
+                };
             }
-
-            var classNode = node.parent.parent.parent;
-            funcInfo = {
-                upper: funcInfo,
-                hasExtends: Boolean(
-                    classNode.superClass &&
-                    !astUtils.isNullOrUndefined(classNode.superClass)
-                ),
-                scope: context.getScope(),
-                codePath: codePath
-            };
         },
 
         "onCodePathEnd": function(codePath, node) {
-            if (!isConstructorFunction(node)) {
-                return;
-            }
-
             var hasExtends = funcInfo.hasExtends;
             funcInfo = funcInfo.upper;
             if (!hasExtends) {
@@ -26646,17 +26763,14 @@ module.exports = function(context) {
         },
 
         "onCodePathSegmentStart": function(segment) {
-            if (!(
-                funcInfo &&
-                funcInfo.hasExtends &&
-                funcInfo.scope === context.getScope().variableScope
-            )) {
+            if (!(funcInfo && funcInfo.isConstructor && funcInfo.hasExtends)) {
                 return;
             }
 
             var info = segInfoMap[segment.id] = {
                 calledInSomePaths: false,
-                calledInEveryPaths: false
+                calledInEveryPaths: false,
+                validNodes: []
             };
 
             var prevSegments = segment.prevSegments;
@@ -26666,12 +26780,43 @@ module.exports = function(context) {
             }
         },
 
+        "onCodePathSegmentLoop": function(fromSegment, toSegment) {
+            if (!(funcInfo && funcInfo.isConstructor && funcInfo.hasExtends)) {
+                return;
+            }
+
+            var isRealLoop = toSegment.prevSegments.length >= 2;
+            funcInfo.codePath.traverseSegments(
+                {first: toSegment, last: fromSegment},
+                function(segment) {
+                    var info = segInfoMap[segment.id];
+
+                    var prevSegments = segment.prevSegments;
+                    info.calledInSomePaths = prevSegments.some(isCalledInSomePath);
+                    info.calledInEveryPaths = prevSegments.every(isCalledInEveryPath);
+
+                    if (info.calledInSomePaths || isRealLoop) {
+                        var nodes = info.validNodes;
+                        info.validNodes = [];
+
+                        for (var i = 0; i < nodes.length; ++i) {
+                            var node = nodes[i];
+                            context.report({
+                                message: "Unexpected duplicate 'super()'.",
+                                node: node
+                            });
+                        }
+                    }
+                }
+            );
+        },
+
         "CallExpression:exit": function(node) {
             if (node.callee.type !== "Super") {
                 return;
             }
 
-            if (!(funcInfo && funcInfo.scope === context.getScope().variableScope)) {
+            if (!(funcInfo && funcInfo.isConstructor)) {
                 return;
             }
 
@@ -26690,6 +26835,8 @@ module.exports = function(context) {
                         message: "Unexpected duplicate 'super()'.",
                         node: node
                     });
+                } else {
+                    info.validNodes.push(node);
                 }
             } else {
                 context.report({
@@ -27217,7 +27364,7 @@ module.exports = function(context) {
         "FunctionDeclaration": function(node) {
             stack.push(false);
 
-            if (!enforceDeclarations) {
+            if (!enforceDeclarations && node.parent.type !== "ExportDefaultDeclaration") {
                 context.report(node, "Expected a function expression.");
             }
         },
@@ -27771,7 +27918,7 @@ module.exports.schema = [
 "use strict";
 
 var util = require("util");
-var assign = require("object-assign");
+var lodash = require("lodash");
 
 module.exports = function(context) {
 
@@ -27809,7 +27956,7 @@ module.exports = function(context) {
                     const: variableDeclaratorRules
                 };
             } else if (typeof variableDeclaratorRules === "object") {
-                assign(options.VariableDeclarator, variableDeclaratorRules);
+                lodash.assign(options.VariableDeclarator, variableDeclaratorRules);
             }
         }
     }
@@ -28063,13 +28210,16 @@ module.exports = function(context) {
             nodeIndent = getNodeIndent(effectiveParent);
             if (parentVarNode && parentVarNode.loc.start.line !== node.loc.start.line) {
                 if (parent.type !== "VariableDeclarator" || parentVarNode === parentVarNode.parent.declarations[0]) {
-                    if (options.VariableDeclarator[parentVarNode.parent.kind] === 0 && (parent.type === "ObjectExpression" || parent.type === "ArrayExpression")) {
-                        nodeIndent = nodeIndent + indentSize;
-                    } else {
+                    if (parentVarNode.loc.start.line === effectiveParent.loc.start.line) {
                         nodeIndent = nodeIndent + (indentSize * options.VariableDeclarator[parentVarNode.parent.kind]);
+                    } else if (
+                        parent.type === "ObjectExpression" ||
+                        parent.type === "ArrayExpression" ||
+                        parent.type === "CallExpression" ||
+                        parent.type === "ArrowFunctionExpression"
+                    ) {
+                        nodeIndent = nodeIndent + indentSize;
                     }
-                } else if (parent.loc.start.line !== node.loc.start.line && parentVarNode === parentVarNode.parent.declarations[0]) {
-                    nodeIndent = nodeIndent + indentSize;
                 }
             } else if (!parentVarNode && !isFirstArrayElementOnSameLine(parent) && effectiveParent.type !== "MemberExpression" && effectiveParent.type !== "ExpressionStatement" && effectiveParent.type !== "AssignmentExpression" && effectiveParent.type !== "Property") {
                 nodeIndent = nodeIndent + indentSize;
@@ -28321,7 +28471,7 @@ module.exports.schema = [
 ];
 
 },
-   {"object-assign":"/node_modules/object-assign/index.js","util":"/node_modules/browserify/node_modules/util/util.js"}],
+   {"lodash":"/node_modules/lodash/lodash.js","util":"/node_modules/browserify/node_modules/util/util.js"}],
 
 "/tmp/rules/init-declarations.js": [function(require,module,exports){
 "use strict";
@@ -28589,7 +28739,10 @@ module.exports = function(context) {
             firstTokenAfterColon = context.getTokenAfter(getNextColon(key)),
             location = side === "key" ? key.loc.start : firstTokenAfterColon.loc.start;
 
-        if ((diff && mode === "strict" || diff < 0 && mode === "minimum") &&
+        if ((
+            diff && mode === "strict" ||
+            diff < 0 && mode === "minimum" ||
+            diff > 0 && !expected && mode === "minimum") &&
             !(expected && containsLineTerminator(whitespace))
         ) {
             context.report(property[side], location, messages[side], {
@@ -28902,8 +29055,7 @@ module.exports = function(context) {
             });
         }
     }
-    function noop() {}
-    
+
     function parseOptions(options) {
         var before = !options || options.before !== false;
         var after = !options || options.after !== false;
@@ -28925,10 +29077,6 @@ module.exports = function(context) {
                     before: thisBefore ? expectSpaceBefore : unexpectSpaceBefore,
                     after: thisAfter ? expectSpaceAfter : unexpectSpaceAfter
                 };
-                if (typeof thisBefore != "boolean")
-                    retv[key].before = noop;
-                if (typeof thisAfter != "boolean")
-                    retv[key].after = noop;
             } else {
                 retv[key] = defaultValue;
             }
@@ -29174,7 +29322,7 @@ module.exports.schema = [
 "/tmp/rules/lines-around-comment.js": [function(require,module,exports){
 "use strict";
 
-var assign = require("object-assign");
+var lodash = require("lodash");
 
 function getEmptyLineNums(lines) {
     var emptyLines = lines.map(function(line, i) {
@@ -29206,7 +29354,7 @@ function contains(val, array) {
 
 module.exports = function(context) {
 
-    var options = context.options[0] ? assign({}, context.options[0]) : {};
+    var options = context.options[0] ? lodash.assign({}, context.options[0]) : {};
     options.beforeLineComment = options.beforeLineComment || false;
     options.afterLineComment = options.afterLineComment || false;
     options.beforeBlockComment = typeof options.beforeBlockComment !== "undefined" ? options.beforeBlockComment : true;
@@ -29403,7 +29551,7 @@ module.exports.schema = [
 ];
 
 },
-   {"object-assign":"/node_modules/object-assign/index.js"}],
+   {"lodash":"/node_modules/lodash/lodash.js"}],
 
 "/tmp/rules/max-depth.js": [function(require,module,exports){
 "use strict";
@@ -29800,7 +29948,7 @@ module.exports.schema = [
 "/tmp/rules/new-cap.js": [function(require,module,exports){
 "use strict";
 
-var assign = require("object-assign");
+var lodash = require("lodash");
 
 var CAPS_ALLOWED = [
     "Array",
@@ -29839,7 +29987,7 @@ function calculateCapIsNewExceptions(config) {
 
 module.exports = function(context) {
 
-    var config = context.options[0] ? assign({}, context.options[0]) : {};
+    var config = context.options[0] ? lodash.assign({}, context.options[0]) : {};
     config.newIsCap = config.newIsCap !== false;
     config.capIsNew = config.capIsNew !== false;
     var skipProperties = config.properties === false;
@@ -29969,7 +30117,7 @@ module.exports.schema = [
 ];
 
 },
-   {"object-assign":"/node_modules/object-assign/index.js"}],
+   {"lodash":"/node_modules/lodash/lodash.js"}],
 
 "/tmp/rules/new-parens.js": [function(require,module,exports){
 "use strict";
@@ -30004,6 +30152,8 @@ module.exports = function(context) {
     var ALWAYS_MESSAGE = "Expected blank line after variable declarations.",
         NEVER_MESSAGE = "Unexpected blank line after variable declarations.";
 
+    var sourceCode = context.getSourceCode();
+
     var mode = context.options[0] === "never" ? "never" : "always";
 
     var commentEndLine = context.getAllComments().reduce(function(result, token) {
@@ -30025,13 +30175,9 @@ module.exports = function(context) {
             nodeType === "ExportDefaultDeclaration" || nodeType === "ExportAllDeclaration";
     }
 
-    function isFunctionSpecifier(nodeType) {
-        return nodeType === "FunctionDeclaration" || nodeType === "FunctionExpression" ||
-            nodeType === "ArrowFunctionExpression";
-    }
-
     function isLastNode(node) {
-        return node.parent.body[node.parent.body.length - 1] === node;
+        var token = sourceCode.getTokenAfter(node);
+        return !token || (token.type === "Punctuator" && token.value === "}");
     }
 
     function hasBlankLineAfterComment(token, commentStartLine) {
@@ -30043,8 +30189,8 @@ module.exports = function(context) {
     }
 
     function checkForBlankLine(node) {
-        var lastToken = context.getLastToken(node),
-            nextToken = context.getTokenAfter(node),
+        var lastToken = sourceCode.getLastToken(node),
+            nextToken = sourceCode.getTokenAfter(node),
             nextLineNum = lastToken.loc.end.line + 1,
             noNextLineToken,
             hasNextLineComment;
@@ -30065,7 +30211,7 @@ module.exports = function(context) {
             return;
         }
 
-        if (node.parent.parent && isFunctionSpecifier(node.parent.parent.type) && isLastNode(node)) {
+        if (isLastNode(node)) {
             return;
         }
 
@@ -30124,7 +30270,7 @@ module.exports = function(context) {
 
             objectLineNumber = node.object.loc.end.line;
             propertyLineNumber = node.property.loc.end.line;
-            valid = propertyLineNumber > objectLineNumber;
+            valid = node.computed || propertyLineNumber > objectLineNumber;
 
             if (!valid) {
                 codeState.reports.push({
@@ -31165,6 +31311,120 @@ module.exports.schema = [];
 },
    {}],
 
+"/tmp/rules/no-empty-function.js": [function(require,module,exports){
+"use strict";
+
+var ALLOW_OPTIONS = Object.freeze([
+    "functions",
+    "arrowFunctions",
+    "generatorFunctions",
+    "methods",
+    "generatorMethods",
+    "getters",
+    "setters",
+    "constructors"
+]);
+var SHOW_KIND = Object.freeze({
+    functions: "function",
+    arrowFunctions: "arrow function",
+    generatorFunctions: "generator function",
+    asyncFunctions: "async function",
+    methods: "method",
+    generatorMethods: "generator method",
+    asyncMethods: "async method",
+    getters: "getter",
+    setters: "setter",
+    constructors: "constructor"
+});
+
+function getKind(node) {
+    var parent = node.parent;
+    var kind = "";
+
+    if (node.type === "ArrowFunctionExpression") {
+        return "arrowFunctions";
+    }
+
+    if (parent.type === "Property") {
+        if (parent.kind === "get") {
+            return "getters";
+        }
+        if (parent.kind === "set") {
+            return "setters";
+        }
+        kind = parent.method ? "methods" : "functions";
+
+    } else if (parent.type === "MethodDefinition") {
+        if (parent.kind === "get") {
+            return "getters";
+        }
+        if (parent.kind === "set") {
+            return "setters";
+        }
+        if (parent.kind === "constructor") {
+            return "constructors";
+        }
+        kind = "methods";
+
+    } else {
+        kind = "functions";
+    }
+
+    var prefix = "";
+    if (node.generator) {
+        prefix = "generator";
+    } else if (node.async) {
+        prefix = "async";
+    } else {
+        return kind;
+    }
+    return prefix + kind[0].toUpperCase() + kind.slice(1);
+}
+
+module.exports = function(context) {
+    var options = context.options[0] || {};
+    var allowed = options.allow || [];
+
+    function reportIfEmpty(node) {
+        var kind = getKind(node);
+
+        if (allowed.indexOf(kind) === -1 &&
+            node.body.type === "BlockStatement" &&
+            node.body.body.length === 0 &&
+            context.getComments(node.body).trailing.length === 0
+        ) {
+            context.report({
+                node: node,
+                loc: node.body.loc.start,
+                message: "Unexpected empty " + SHOW_KIND[kind] + "."
+            });
+        }
+    }
+
+    return {
+        ArrowFunctionExpression: reportIfEmpty,
+        FunctionDeclaration: reportIfEmpty,
+        FunctionExpression: reportIfEmpty
+    };
+};
+
+module.exports.schema = [
+    {
+        type: "object",
+        properties: {
+            allow: {
+                type: "array",
+                items: {enum: ALLOW_OPTIONS},
+                uniqueItems: true
+            }
+        },
+        additionalProperties: false
+    }
+];
+
+},
+   {}],
+
 "/tmp/rules/no-empty-pattern.js": [function(require,module,exports){
 "use strict";
 
@@ -31191,26 +31451,17 @@ module.exports.schema = [];
 "/tmp/rules/no-empty.js": [function(require,module,exports){
 "use strict";
 
-module.exports = function(context) {
-    var config = context.options[0] || {};
-    var includeMethods = config.methods === true;
+var FUNCTION_TYPE = /^(?:ArrowFunctionExpression|Function(?:Declaration|Expression))$/;
 
+module.exports = function(context) {
     return {
         "BlockStatement": function(node) {
-            var parentType = node.parent.type;
-
             if (node.body.length !== 0) {
                 return;
             }
 
-            if (parentType === "FunctionDeclaration" || parentType === "ArrowFunctionExpression") {
+            if (FUNCTION_TYPE.test(node.parent.type)) {
                 return;
-            }
-
-            if (parentType === "FunctionExpression" ) {
-                if (!includeMethods || (includeMethods && !node.parent.parent.method)) {
-                    return;
-                }
             }
 
             if (context.getComments(node).trailing.length > 0) {
@@ -31230,17 +31481,7 @@ module.exports = function(context) {
 
 };
 
-module.exports.schema = [
-    {
-        "type": "object",
-        "properties": {
-            "methods": {
-                "type": "boolean"
-            }
-        },
-        "additionalProperties": false
-    }
-];
+module.exports.schema = [];
 
 },
    {}],
@@ -32760,8 +33001,8 @@ module.exports = function(context) {
 
     function testCodeAroundComment(node) {
 
-        var startLine = String(context.getSourceLines()[node.loc.start.line]);
-        var endLine = String(context.getSourceLines()[node.loc.end.line]);
+        var startLine = String(context.getSourceLines()[node.loc.start.line - 1]);
+        var endLine = String(context.getSourceLines()[node.loc.end.line - 1]);
 
         var preamble = startLine.slice(0, node.loc.start.column).trim();
 
@@ -33834,7 +34075,7 @@ module.exports = function(context) {
 
             var source = context.getSource(),
                 allComments = context.getAllComments(),
-                pattern = /[^\n\r\u2028\u2029 ] {2,}/g,  // note: repeating space
+                pattern = /[^\n\r\u2028\u2029\t ].? {2,}/g,  // note: repeating space
                 token,
                 previousToken,
                 parent;
@@ -34002,8 +34243,8 @@ module.exports = function(context) {
                     blankCounter++;
                 } else {
                     location = {
-                        line: lastLocation ,
-                        column: 0
+                        line: lastLocation + 1,
+                        column: 1
                     };
                     if (lastLocation < firstOfEndingBlankLines) {
                         if (blankCounter >= max) {
@@ -35439,83 +35680,137 @@ module.exports = function(context) {
     var segInfoMap = Object.create(null);
 
     function isCalled(segment) {
-        return Boolean(segInfoMap[segment.id]);
+        return segInfoMap[segment.id].superCalled;
     }
 
-    function isInConstructor() {
-        return Boolean(
-            funcInfo &&
-            funcInfo.hasExtends &&
-            funcInfo.scope === context.getScope().variableScope
-        );
+    function isInConstructorOfDerivedClass() {
+        return Boolean(funcInfo && funcInfo.isConstructor && funcInfo.hasExtends);
     }
 
     function isBeforeCallOfSuper() {
         return (
-            isInConstructor(funcInfo) &&
+            isInConstructorOfDerivedClass(funcInfo) &&
             !funcInfo.codePath.currentSegments.every(isCalled)
         );
     }
 
+    function setInvalid(node) {
+        var segments = funcInfo.codePath.currentSegments;
+        for (var i = 0; i < segments.length; ++i) {
+            segInfoMap[segments[i].id].invalidNodes.push(node);
+        }
+    }
+
+    function setSuperCalled() {
+        var segments = funcInfo.codePath.currentSegments;
+        for (var i = 0; i < segments.length; ++i) {
+            segInfoMap[segments[i].id].superCalled = true;
+        }
+    }
+
     return {
         "onCodePathStart": function(codePath, node) {
-            if (!isConstructorFunction(node)) {
+            if (isConstructorFunction(node)) {
+                var classNode = node.parent.parent.parent;
+                funcInfo = {
+                    upper: funcInfo,
+                    isConstructor: true,
+                    hasExtends: Boolean(
+                        classNode.superClass &&
+                        !astUtils.isNullOrUndefined(classNode.superClass)
+                    ),
+                    codePath: codePath
+                };
+            } else {
+                funcInfo = {
+                    upper: funcInfo,
+                    isConstructor: false,
+                    hasExtends: false,
+                    codePath: codePath
+                };
+            }
+        },
+
+        "onCodePathEnd": function(codePath) {
+            var isDerivedClass = funcInfo.hasExtends;
+            funcInfo = funcInfo.upper;
+            if (!isDerivedClass) {
                 return;
             }
 
-            var classNode = node.parent.parent.parent;
-            funcInfo = {
-                upper: funcInfo,
-                hasExtends: Boolean(
-                    classNode.superClass &&
-                    !astUtils.isNullOrUndefined(classNode.superClass)
-                ),
-                scope: context.getScope(),
-                codePath: codePath
-            };
-        },
+            codePath.traverseSegments(function(segment, controller) {
+                var info = segInfoMap[segment.id];
 
-        "onCodePathEnd": function(codePath, node) {
-            if (isConstructorFunction(node)) {
-                funcInfo = funcInfo.upper;
-            }
+                for (var i = 0; i < info.invalidNodes.length; ++i) {
+                    var invalidNode = info.invalidNodes[i];
+
+                    context.report({
+                        message: "'{{kind}}' is not allowed before 'super()'.",
+                        node: invalidNode,
+                        data: {
+                            kind: invalidNode.type === "Super" ? "super" : "this"
+                        }
+                    });
+                }
+
+                if (info.superCalled) {
+                    controller.skip();
+                }
+            });
         },
 
         "onCodePathSegmentStart": function(segment) {
-            if (!isInConstructor(funcInfo)) {
+            if (!isInConstructorOfDerivedClass(funcInfo)) {
                 return;
             }
 
-            segInfoMap[segment.id] = (
-                segment.prevSegments.length > 0 &&
-                segment.prevSegments.every(isCalled)
+            segInfoMap[segment.id] = {
+                superCalled: (
+                    segment.prevSegments.length > 0 &&
+                    segment.prevSegments.every(isCalled)
+                ),
+                invalidNodes: []
+            };
+        },
+
+        "onCodePathSegmentLoop": function(fromSegment, toSegment) {
+            if (!isInConstructorOfDerivedClass(funcInfo)) {
+                return;
+            }
+
+            funcInfo.codePath.traverseSegments(
+                {first: toSegment, last: fromSegment},
+                function(segment, controller) {
+                    var info = segInfoMap[segment.id];
+                    if (info.superCalled) {
+                        info.invalidNodes = [];
+                        controller.skip();
+                    } else if (
+                        segment.prevSegments.length > 0 &&
+                        segment.prevSegments.every(isCalled)
+                    ) {
+                        info.superCalled = true;
+                        info.invalidNodes = [];
+                    }
+                }
             );
         },
 
         "ThisExpression": function(node) {
             if (isBeforeCallOfSuper()) {
-                context.report({
-                    message: "'this' is not allowed before 'super()'.",
-                    node: node
-                });
+                setInvalid(node);
             }
         },
 
         "Super": function(node) {
             if (!astUtils.isCallee(node) && isBeforeCallOfSuper()) {
-                context.report({
-                    message: "'super' is not allowed before 'super()'.",
-                    node: node
-                });
+                setInvalid(node);
             }
         },
 
         "CallExpression:exit": function(node) {
             if (node.callee.type === "Super" && isBeforeCallOfSuper()) {
-                var segments = funcInfo.codePath.currentSegments;
-                for (var i = 0; i < segments.length; ++i) {
-                    segInfoMap[segments[i].id] = true;
-                }
+                setSuperCalled();
             }
         },
 
@@ -35634,7 +35929,7 @@ module.exports = function(context) {
                         continue;
                     }
                     location = {
-                        line: i,
+                        line: i + 1,
                         column: matches.index
                     };
 
@@ -36360,7 +36655,7 @@ module.exports.schema = [];
 "/tmp/rules/no-unused-vars.js": [function(require,module,exports){
 "use strict";
 
-var escape = require("escape-string-regexp");
+var lodash = require("lodash");
 
 module.exports = function(context) {
 
@@ -36504,7 +36799,7 @@ module.exports = function(context) {
     }
 
     function getColumnInComment(variable, comment) {
-        var namePattern = new RegExp("[\\s,]" + escape(variable.name) + "(?:$|[\\s,:])", "g");
+        var namePattern = new RegExp("[\\s,]" + lodash.escapeRegExp(variable.name) + "(?:$|[\\s,:])", "g");
 
         namePattern.lastIndex = comment.value.indexOf("global") + 6;
 
@@ -36586,7 +36881,7 @@ module.exports.schema = [
 ];
 
 },
-   {"escape-string-regexp":"/node_modules/escape-string-regexp/index.js"}],
+   {"lodash":"/node_modules/lodash/lodash.js"}],
 
 "/tmp/rules/no-use-before-define.js": [function(require,module,exports){
 "use strict";
@@ -37053,28 +37348,50 @@ var astUtils = require("../ast-utils");
 module.exports = function(context) {
     var sourceCode = context.getSourceCode();
 
+    function findOpeningBracket(node) {
+        var token = sourceCode.getTokenBefore(node.property);
+
+        while (token.value !== "[") {
+            token = sourceCode.getTokenBefore(token);
+        }
+        return token;
+    }
+
+    function reportError(node) {
+        context.report({
+            node: node,
+            message: "Unexpected whitespace before property {{propName}}.",
+            data: {
+                propName: sourceCode.getText(node.property)
+            }
+        });
+    }
+
     return {
         MemberExpression: function(node) {
-            var obj = node.object;
-            var prop = node.property;
+            var rightToken;
+            var leftToken;
 
-            if (astUtils.isTokenOnSameLine(obj, prop)) {
-                if (sourceCode.isSpaceBetweenTokens(obj, prop)) {
-                    context.report({
-                        node: node,
-                        message: "Unexpected whitespace before property '{{ propName }}'.",
-                        data: {
-                            propName: prop.name
-                        }
-                    });
-                }
+            if (!astUtils.isTokenOnSameLine(node.object, node.property)) {
+                return;
+            }
+
+            if (node.computed) {
+                rightToken = findOpeningBracket(node);
+                leftToken = sourceCode.getTokenBefore(rightToken);
+            } else {
+                rightToken = sourceCode.getFirstToken(node.property);
+                leftToken = sourceCode.getTokenBefore(rightToken, 1);
+            }
+
+            if (sourceCode.isSpaceBetweenTokens(leftToken, rightToken)) {
+                reportError(node);
             }
         }
     };
 };
 
 module.exports.schema = [];
-
 
 },
    {"../ast-utils":"/tmp/ast-utils.js"}],
@@ -37755,7 +38072,7 @@ module.exports.schema = [
 "/tmp/rules/operator-linebreak.js": [function(require,module,exports){
 "use strict";
 
-var assign = require("object-assign"),
+var lodash = require("lodash"),
     astUtils = require("../ast-utils");
 
 module.exports = function(context) {
@@ -37763,7 +38080,7 @@ module.exports = function(context) {
     var usedDefaultGlobal = !context.options[0];
     var globalStyle = context.options[0] || "after";
     var options = context.options[1] || {};
-    var styleOverrides = options.overrides ? assign({}, options.overrides) : {};
+    var styleOverrides = options.overrides ? lodash.assign({}, options.overrides) : {};
 
     if (usedDefaultGlobal && !styleOverrides["?"]) {
         styleOverrides["?"] = "before";
@@ -37866,7 +38183,7 @@ module.exports.schema = [
 ];
 
 },
-   {"../ast-utils":"/tmp/ast-utils.js","object-assign":"/node_modules/object-assign/index.js"}],
+   {"../ast-utils":"/tmp/ast-utils.js","lodash":"/node_modules/lodash/lodash.js"}],
 
 "/tmp/rules/padded-blocks.js": [function(require,module,exports){
 "use strict";
@@ -38239,7 +38556,7 @@ module.exports = function(context) {
             ) {
                 context.report({
                     node: identifier,
-                    message: "'{{name}}' is never modified, use 'const' instead.",
+                    message: "'{{name}}' is never reassigned, use 'const' instead.",
                     data: identifier
                 });
             }
@@ -38950,7 +39267,7 @@ module.exports.schema = [
 "/tmp/rules/require-jsdoc.js": [function(require,module,exports){
 "use strict";
 
-var assign = require("object-assign");
+var lodash = require("lodash");
 
 module.exports = function(context) {
     var source = context.getSourceCode();
@@ -38959,7 +39276,7 @@ module.exports = function(context) {
         "MethodDefinition": false,
         "ClassDeclaration": false
     };
-    var options = assign(DEFAULT_OPTIONS, context.options[0] && context.options[0].require || {});
+    var options = lodash.assign(DEFAULT_OPTIONS, context.options[0] && context.options[0].require || {});
 
     function report(node) {
         context.report(node, "Missing JSDoc comment.");
@@ -39027,7 +39344,7 @@ module.exports.schema = [
 ];
 
 },
-   {"object-assign":"/node_modules/object-assign/index.js"}],
+   {"lodash":"/node_modules/lodash/lodash.js"}],
 
 "/tmp/rules/require-yield.js": [function(require,module,exports){
 "use strict";
@@ -39471,16 +39788,21 @@ module.exports = function(context) {
             }
 
             if (!ignoreMemberSort && node.specifiers.length > 1) {
-                node.specifiers.reduce(function(previousSpecifier, currentSpecifier) {
-                    var currentSpecifierName = currentSpecifier.local.name,
-                        previousSpecifierName = previousSpecifier.local.name;
+                var previousSpecifier = null;
+                var previousSpecifierName = null;
 
-                    if (ignoreCase) {
-                        currentSpecifierName = currentSpecifierName.toLowerCase();
-                        previousSpecifierName = previousSpecifierName.toLowerCase();
+                for (var i = 0; i < node.specifiers.length; ++i) {
+                    var currentSpecifier = node.specifiers[i];
+                    if (currentSpecifier.type !== "ImportSpecifier") {
+                        continue;
                     }
 
-                    if (currentSpecifierName < previousSpecifierName) {
+                    var currentSpecifierName = currentSpecifier.local.name;
+                    if (ignoreCase) {
+                        currentSpecifierName = currentSpecifierName.toLowerCase();
+                    }
+
+                    if (previousSpecifier && currentSpecifierName < previousSpecifierName) {
                         context.report({
                             node: currentSpecifier,
                             message: "Member '{{memberName}}' of the import declaration should be sorted alphabetically.",
@@ -39490,8 +39812,9 @@ module.exports = function(context) {
                         });
                     }
 
-                    return currentSpecifier;
-                }, node.specifiers[0]);
+                    previousSpecifier = currentSpecifier;
+                    previousSpecifierName = currentSpecifierName;
+                }
             }
 
             previousDeclaration = node;
@@ -40270,11 +40593,11 @@ module.exports.schema = [
 "/tmp/rules/spaced-comment.js": [function(require,module,exports){
 "use strict";
 
-var escapeStringRegexp = require("escape-string-regexp");
+var lodash = require("lodash");
 
 function escape(s) {
     var isOneChar = s.length === 1;
-    s = escapeStringRegexp(s);
+    s = lodash.escapeRegExp(s);
     return isOneChar ? s : "(?:" + s + ")";
 }
 
@@ -40371,7 +40694,7 @@ module.exports = function(context) {
             rule = styleRules[type],
             commentIdentifier = type === "block" ? "/*" : "//";
 
-        if (node.value.length === 0 || type === "block") {
+        if (node.value.length === 0) {
             return;
         }
 
@@ -40466,12 +40789,12 @@ module.exports.schema = [
 ];
 
 },
-   {"escape-string-regexp":"/node_modules/escape-string-regexp/index.js"}],
+   {"lodash":"/node_modules/lodash/lodash.js"}],
 
 "/tmp/rules/strict.js": [function(require,module,exports){
 "use strict";
 
-var assign = require("object-assign");
+var lodash = require("lodash");
 
 var messages = {
     function: "Use the function form of 'use strict'.",
@@ -40595,7 +40918,7 @@ module.exports = function(context) {
     };
 
     if (mode === "function") {
-        assign(rule, {
+        lodash.assign(rule, {
             "ClassBody": function() {
                 classScopes.push(true);
             },
@@ -40619,7 +40942,7 @@ module.exports.schema = [
 ];
 
 },
-   {"object-assign":"/node_modules/object-assign/index.js"}],
+   {"lodash":"/node_modules/lodash/lodash.js"}],
 
 "/tmp/rules/template-curly-spacing.js": [function(require,module,exports){
 "use strict";
@@ -41916,9 +42239,9 @@ module.exports = RuleFixer;
 "/tmp/util/source-code.js": [function(require,module,exports){
 "use strict";
 
-var createTokenStore = require("../token-store.js"),
-    estraverse = require("./estraverse"),
-    assign = require("object-assign");
+var lodash = require("lodash"),
+    createTokenStore = require("../token-store.js"),
+    estraverse = require("./estraverse");
 
 function validate(ast) {
 
@@ -42086,7 +42409,7 @@ SourceCode.prototype = {
             }
         });
 
-        return result ? assign({parent: resultParent}, result) : null;
+        return result ? lodash.assign({parent: resultParent}, result) : null;
     },
 
     isSpaceBetweenTokens: function(first, second) {
@@ -42099,6 +42422,6 @@ SourceCode.prototype = {
 module.exports = SourceCode;
 
 },
-   {"../token-store.js":"/tmp/token-store.js","./estraverse":"/tmp/util/estraverse.js","object-assign":"/node_modules/object-assign/index.js"}]},{},["/tmp/eslint.js"])("/tmp/eslint.js")
+   {"../token-store.js":"/tmp/token-store.js","./estraverse":"/tmp/util/estraverse.js","lodash":"/node_modules/lodash/lodash.js"}]},{},["/tmp/eslint.js"])("/tmp/eslint.js")
 });
 })()
