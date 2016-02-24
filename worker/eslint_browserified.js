@@ -19057,8 +19057,8 @@ module.exports={
 		"Symbol": false,
 		"SyntaxError": false,
 		"System": false,
-		"toLocaleString": false,
-		"toString": false,
+		// "toLocaleString": false,
+		// "toString": false,
 		"TypeError": false,
 		"Uint16Array": false,
 		"Uint32Array": false,
@@ -21058,7 +21058,6 @@ function extend() {
     var reRegExpChar = /[\\^$.*+?()[\]{}|]/g,
       reHasRegExpChar = RegExp(reRegExpChar.source);
     exports.escapeRegExp = function escapeRegExp(string) {
-      string = toString(string);
       return (string && reHasRegExpChar.test(string))
         ? string.replace(reRegExpChar, '\\$&')
         : string;
