@@ -4273,6 +4273,9 @@ acorn.plugins.espree = function(instance) {
                 first = false;
             }
 
+            if (this.value == "async" && /^[ \t]*\w+/.test(this.input.slice(this.end)))
+                this.next();
+            
             var prop = this.startNode(),
                 isGenerator,
                 startPos,
