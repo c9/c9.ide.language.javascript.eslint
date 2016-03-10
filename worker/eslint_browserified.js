@@ -325,6 +325,12 @@ pp.parseExprAtom = function (refDestructuringErrors) {
     case _tokentype.types.at:
       this.next();
       return this.parseExprAtom();
+    case _tokentype.types.colon:
+      if (this.input[this.end] == ":") {
+         this.next();
+         this.next();
+         return this.parseExprSubscripts(refDestructuringErrors);
+      }
 
     default:
       this.unexpected();
@@ -1809,6 +1815,7 @@ pp.parseClass = function (node, isStatement) {
       method.value = this.finishNode(_node, "BlockStatement");
     }
     if (method.value) {
+      method.kind = 'class'
       classBody.body.push(this.finishNode(method, "Property"));
       continue;
     }
@@ -13108,7 +13115,7 @@ module.exports = Components.detect(function(context, components, utils) {
   var MISSING_MESSAGE = 'Component definition is missing display name';
 
   function isDisplayNameDeclaration(node) {
-    if (node.type === /*ClassProperty*/'Property') {
+    if (node.type === /*ClassProperty*/'Property' && node.kind == 'class') {
       var tokens = context.getFirstTokens(node, 2);
       if (
         tokens[0].value === 'displayName' ||
@@ -13187,7 +13194,7 @@ module.exports = Components.detect(function(context, components, utils) {
   return {
 
     /*ClassProperty*/Property: function(node) {
-      if (!isDisplayNameDeclaration(node)) {
+      if (node.kind == 'class' && !isDisplayNameDeclaration(node)) {
         return;
       }
       markDisplayNameAsDeclared(node);
@@ -13293,7 +13300,7 @@ module.exports = function(context) {
 
   function isPropTypesDeclaration(node) {
 
-    if (node.type === /*ClassProperty*/'Property') {
+    if (node.type === /*ClassProperty*/'Property' && node.kind == 'class') {
       var tokens = context.getFirstTokens(node, 2);
       if (tokens[0].value === 'propTypes' || (tokens[1] && tokens[1].value === 'propTypes')) {
         return true;
@@ -13339,7 +13346,7 @@ module.exports = function(context) {
 
   return {
     /*ClassProperty*/Property: function(node) {
-      if (isPropTypesDeclaration(node) && node.value && node.value.type === 'ObjectExpression') {
+      if (node.kind == 'class' && isPropTypesDeclaration(node) && node.value && node.value.type === 'ObjectExpression') {
         checkForbidden(node.value.properties);
       }
     },
@@ -14518,7 +14525,7 @@ module.exports = function(context) {
 
   function isPropTypesDeclaration(node) {
 
-    if (node.type === /*ClassProperty*/'Property') {
+    if (node.type === /*ClassProperty*/'Property' && node.kind == 'class') {
       var tokens = context.getFirstTokens(node, 2);
       return (tokens[0] && tokens[0].value === 'propTypes') ||
              (tokens[1] && tokens[1].value === 'propTypes');
@@ -14591,7 +14598,7 @@ module.exports = function(context) {
 
   return {
     /*ClassProperty*/Property: function(node) {
-      if (isPropTypesDeclaration(node) && node.value && node.value.type === 'ObjectExpression') {
+      if (node.kind == 'class' && isPropTypesDeclaration(node) && node.value && node.value.type === 'ObjectExpression') {
         checkSorted(node.value.properties);
       }
     },
@@ -15440,7 +15447,7 @@ module.exports = Components.detect(function(context, components, utils) {
   }
 
   function isAnnotatedPropsDeclaration(node) {
-    if (node && node.type === /*ClassProperty*/'Property') {
+    if (node && node.type === /*ClassProperty*/'Property' && node.kind == 'class') {
       var tokens = context.getFirstTokens(node, 2);
       if (
         node.typeAnnotation && (
@@ -15456,7 +15463,7 @@ module.exports = Components.detect(function(context, components, utils) {
 
   function isPropTypesDeclaration(node) {
 
-    if (node && node.type === /*ClassProperty*/'Property') {
+    if (node && node.type === /*ClassProperty*/'Property' && node.kind == 'class') {
       var tokens = context.getFirstTokens(node, 2);
       if (
         tokens[0].value === 'propTypes' ||
@@ -15956,7 +15963,7 @@ module.exports = Components.detect(function(context, components, utils) {
 
   return {
     /*ClassProperty*/Property: function(node) {
-      if (isAnnotatedPropsDeclaration(node)) {
+      if (node.kind == 'class' && isAnnotatedPropsDeclaration(node)) {
         markPropTypesAsDeclared(node, resolveTypeAnnotation(node));
       } else if (isPropTypesDeclaration(node)) {
         markPropTypesAsDeclared(node, node.value);
@@ -16329,7 +16336,7 @@ module.exports = Components.detect(function(context, components) {
 
   function getPropertyName(node) {
 
-    if (node.type === /*ClassProperty*/'Property') {
+    if (node.type === /*ClassProperty*/'Property' && node.kind == 'class') {
       var tokens = context.getFirstTokens(node, 2);
       return tokens[1] && tokens[1].type === 'Identifier' ? tokens[1].value : tokens[0].value;
     }
@@ -16864,7 +16871,7 @@ function componentRule(rule, context) {
     },
 
     /*ClassProperty*/Property: function(node) {
-      node = utils.getParentComponent();
+      node = node.kind == 'class' && utils.getParentComponent();
       if (!node) {
         return;
       }
