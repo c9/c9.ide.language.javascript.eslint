@@ -157,6 +157,12 @@ handler.analyzeSync = function(value, ast, path) {
     config.env = config.env || defaultEnv;
     config.globals = config.globals || defaultGlobals;
     config.parserOptions = config.parserOptions || defaultParserOptions;
+    if (config.parserOptions.ecmaVersion == undefined)
+        config.parserOptions.ecmaVersion = 7;
+    if (config.parserOptions.ecmaFeatures == undefined)
+        config.parserOptions.ecmaFeatures = defaultParserOptions.ecmaFeatures;
+    if (config.parserOptions.ecmaFeatures.experimentalObjectRestSpread == undefined)
+        config.parserOptions.ecmaFeatures.experimentalObjectRestSpread = true;
 
     config.rules["no-unused-vars"] = [
         3,

@@ -13042,6 +13042,7 @@ module.exports = {
     'jsx-equals-spacing': require('./lib/rules/jsx-equals-spacing'),
     'jsx-sort-props': require('./lib/rules/jsx-sort-props'),
     'jsx-sort-prop-types': require('./lib/rules/jsx-sort-prop-types'),
+    'sort-prop-types': require('./lib/rules/jsx-sort-prop-types'),
     'jsx-boolean-value': require('./lib/rules/jsx-boolean-value'),
     'sort-comp': require('./lib/rules/sort-comp'),
     'require-extension': require('./lib/rules/require-extension'),
