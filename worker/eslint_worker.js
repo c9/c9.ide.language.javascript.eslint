@@ -72,6 +72,7 @@ handler.init = function(callback) {
     rules["radix"] = 3;
     rules["no-delete-var"] = 2;
     rules["no-label-var"] = 3;
+    rules["no-console"] = 0;
     rules["no-shadow-restricted-names"] = 2;
     rules["handle-callback-err"] = 1;
     rules["no-new-require"] = 2;
@@ -209,7 +210,11 @@ handler.analyzeSync = function(value, ast, path) {
         if (m.message.match(/'([^']*)' is defined but never used/)) {
             if (RegExp.$1.toUpperCase() === RegExp.$1 && RegExp.$1.toLowerCase() !== RegExp.$1)
                 return; // ignore unused constants
+            if (m.severity === 1)
+                level = "info";
         }
+        if (m.ruleId.match(/space|spacing/) && m.severity === 1)
+            level = "info";
         
         // work around column offset bug
         m.column--;
