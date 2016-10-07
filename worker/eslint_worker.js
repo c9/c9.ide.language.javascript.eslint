@@ -213,7 +213,7 @@ handler.analyzeSync = function(value, ast, path) {
             if (m.severity === 1)
                 level = "info";
         }
-        if (m.ruleId.match(/space|spacing/) && m.severity === 1)
+        if (m.ruleId && m.ruleId.match(/space|spacing/) && m.severity === 1)
             level = "info";
         
         // work around column offset bug
