@@ -239,6 +239,8 @@ handler.analyzeSync = function(value, ast, path) {
             if ((m.line === doc.getLength() || m.line === doc.getLength() - 1)
                 && line.match(/^\s*\}\)\s*$/))
                 return;
+            if (m.severity === 1)
+                level = "info";
         }
             
         markers.push({
