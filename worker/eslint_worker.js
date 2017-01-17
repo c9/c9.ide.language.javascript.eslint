@@ -208,8 +208,11 @@ handler.analyzeSync = function(value, ast, path) {
             return;
 
         if (m.message.match(/'([^']*)' is defined but never used/)) {
-            if (RegExp.$1.toUpperCase() === RegExp.$1 && RegExp.$1.toLowerCase() !== RegExp.$1)
+            var target = RegExp.$1;
+            if (target.toUpperCase() === target && target.toLowerCase() !== target)
                 return; // ignore unused constants
+            if (target === "h")
+                return; // ignore 'h', used in preact
             if (m.severity === 1)
                 level = "info";
         }
